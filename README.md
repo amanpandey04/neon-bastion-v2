@@ -482,15 +482,11 @@ npm install
 npm run build
 ```
 
-This generates:
-
-`dist/`
-
 The generated application can be deployed to any static hosting provider.
 
 The deployed version for this submission is:
 
-**https://github.com/amanpandey04/neon-bastion-v2**
+**https://neon-bastion-v2.vercel.app/**
 
 ---
 
