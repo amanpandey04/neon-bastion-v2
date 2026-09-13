@@ -1,4 +1,9 @@
-![project banner](public/neon-bastion-banner.png)
+<p align="center">
+  <img src="public/neon-bastion-banner.png" width="35%" alt="banner">
+</p>
+<p align="center">
+  <img src="public/neon-bastion.gif" width="75%" alt="gameplay">
+</p>
 
 # Neon Bastion - Hold the Line
 
