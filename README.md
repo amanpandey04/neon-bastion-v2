@@ -18,8 +18,7 @@ The game contains 50 waves, 3 different tower types, 4 enemy types, automatic to
 ## Links
 
 - **Deployed Game:** https://neon-bastion-v2.vercel.app/
-- **Demo Video:** []
-- **Source Code:** https://github.com/amanpandey04/neon-bastion-v2
+- **Demo Video:** https://www.loom.com/share/b4e9558388cf4de7bc50f2791e8d9774
 
 ---
 
@@ -499,7 +498,7 @@ The deployed version for this submission is:
 
 The required demo video is available here:
 
-**[]**
+**https://www.loom.com/share/b4e9558388cf4de7bc50f2791e8d9774**
 
 The video demonstrates:
 
