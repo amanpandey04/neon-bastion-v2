@@ -16,7 +16,7 @@ A polished browser-based tower defense game built with **React, JavaScript, Tail
 
 ---
 
-## Features
+# Game Features
 
 - 50 playable waves
 - 3 meaningfully different tower types
