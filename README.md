@@ -340,5 +340,3 @@ The generated `dist/` directory is intentionally ignored by Git because the depl
 AI tools were used during development as coding and debugging assistants. The important design decisions were reviewed and validated through implementation, profiling, and live browser tests.
 
 The optimization work was driven by measured bottlenecks rather than blindly applying generated code.
-
----
