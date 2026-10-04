@@ -66,7 +66,7 @@ button {
 }
 
 .eyebrow {
-  font-size: 11px;
+  font-size: 12px;
 
   letter-spacing: 0.18em;
 
@@ -126,7 +126,7 @@ p {
 }
 
 .game-tagline {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 900;
   letter-spacing: 0.42em;
   color: #7189a6;
@@ -149,7 +149,7 @@ p {
 
 .stat span {
   color: #72849b;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .stat strong {
@@ -212,7 +212,7 @@ canvas {
 
   color: #a9bad0;
 
-  font-size: 11px;
+  font-size: 12px;
 
   backdrop-filter: blur(8px);
 }
@@ -250,7 +250,7 @@ canvas {
 
   font-weight: 800;
 
-  font-size: 10px;
+  font-size: 11px;
 
   margin-bottom: 12px;
 }
@@ -316,7 +316,7 @@ button.primary {
 .speed-row > span {
   color: #71859f;
 
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .speed-row button.selected {
@@ -393,7 +393,7 @@ button.primary {
 .tower-copy span {
   color: #8ea3bd;
 
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .hint {
@@ -401,7 +401,7 @@ button.primary {
 
   color: #667b95;
 
-  font-size: 10px;
+  font-size: 11px;
 
   line-height: 1.45;
 }
@@ -419,7 +419,7 @@ button.primary {
 .selected-title span {
   color: #7c90aa;
 
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .mini-stats {
@@ -517,7 +517,7 @@ button.primary {
 
   color: #71859f;
 
-  font-size: 10px;
+  font-size: 11px;
 
   line-height: 1.5;
 }
@@ -541,7 +541,7 @@ button.primary {
 .benchmark-status {
   color: #8ca2bd;
 
-  font-size: 10px;
+  font-size: 12px;
 
   line-height: 1.5;
 }
@@ -553,7 +553,7 @@ button.primary {
 
   font-weight: 800;
 
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .benchmark-stats {
@@ -575,13 +575,13 @@ button.primary {
 .benchmark-stats span {
   color: #637891;
 
-  font-size: 9px;
+  font-size: 12px;
 }
 
 .benchmark-stats strong {
   color: #e7f1fc;
 
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .benchmark-pass,
@@ -594,7 +594,7 @@ button.primary {
 
   border-radius: 8px;
 
-  font-size: 10px;
+  font-size: 11px;
 
   font-weight: 900;
 
@@ -663,7 +663,7 @@ button.primary {
 .keyboard-hint,
 .summary-note {
   color: #516984;
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -714,7 +714,7 @@ button.primary {
 
 .overlay-kicker {
   color: #65d7ff;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 900;
   letter-spacing: 0.18em;
 }
@@ -739,7 +739,7 @@ button.primary {
   content: "";
   position: absolute;
   inset: 0;
-  background: linear-gradient(120deg, transparent 20%, rgba(255,255,255,0.04), transparent 80%);
+  background: linear-gradient(120deg, transparent 20%, rgba(255, 255, 255, 0.04), transparent 80%);
   transform: translateX(-120%);
   transition: transform 0.45s ease;
   pointer-events: none;
@@ -758,7 +758,7 @@ button.primary {
   padding: 7px 0;
   border-top: 1px solid rgba(130, 170, 220, 0.06);
   color: #7f93ab;
-  font-size: 10px;
+  font-size: 11px;
   line-height: 1.35;
 }
 
@@ -776,7 +776,7 @@ button.primary {
   border: 1px solid rgba(130, 170, 220, 0.15);
   background: #111e2d;
   color: #b3c5d8;
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 900;
   letter-spacing: 0.08em;
 }
@@ -794,7 +794,7 @@ button.primary {
   gap: 12px;
   padding: 13px 14px;
   color: #92a6be;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.1em;
@@ -843,7 +843,7 @@ button.primary {
   }
 
   .game-tagline {
-    font-size: 9px;
+    font-size: 10px;
     letter-spacing: 0.32em;
   }
 
@@ -852,7 +852,7 @@ button.primary {
   }
 
   .canvas-badges span {
-    font-size: 9px;
+    font-size: 10px;
     padding: 5px 7px;
   }
 }
@@ -899,7 +899,7 @@ button.primary {
 .workload-title,
 .experiment-title {
   color: #8ca2bd;
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 900;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -922,7 +922,7 @@ button.primary {
 
 .workload-grid span {
   color: #617792;
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -980,13 +980,13 @@ button.primary {
 
 .experiment-grid button {
   text-align: left;
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .benchmark-progress {
   margin-top: 4px;
   color: #657f9b;
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .ab-table {
@@ -1006,12 +1006,12 @@ button.primary {
 
 .ab-table span {
   color: #6d839d;
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .ab-table strong {
   color: #e6f0fb;
-  font-size: 10px;
+  font-size: 11px;
   text-align: right;
 }
 
@@ -1022,7 +1022,7 @@ button.primary {
 
 .ab-header strong {
   color: #6c8aa9;
-  font-size: 8px;
+  font-size: 11px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }

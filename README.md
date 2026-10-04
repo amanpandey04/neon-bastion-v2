@@ -7,18 +7,16 @@
 
 # Neon Bastion - Hold the Line
 
-A polished browser-based tower defense game built with **React, JavaScript, Vite, and Canvas 2D**.
+A polished browser-based tower defense game built with **React, JavaScript, Tailwind and Canvas 2D**.
 
 ## Links
 
 - **Live Game:** https://neon-bastion-v2.vercel.app/
-- **Demo Video:** _add the new Loom link after recording_
-- **Source Code:** _add the GitHub repository link_
 - **Performance Numbers:** [`NUMBERS.md`](./NUMBERS.md)
 
 ---
 
-## Requirements covered
+## Features
 
 - 50 playable waves
 - 3 meaningfully different tower types
@@ -37,42 +35,61 @@ A polished browser-based tower defense game built with **React, JavaScript, Vite
 
 # Architecture
 
+The game is divided into two main parts:
+
 ```text
-React UI
+React
 │
-├── HUD / score / health / wave
-├── Tower shop
-├── Upgrade / sell controls
-├── Pause / restart / speed controls
-├── Performance Lab
-└── Victory / game-over overlays
+├── HUD
+├── Tower Shop
+├── Tower Upgrade / Sell UI
+├── Pause / Restart Controls
+├── Performance UI
+└── Victory / Game Over Screens
         │
-        ▼
-GameEngine
+        ↓
+Game Engine
 │
-├── Fixed-step simulation
-├── Wave / spawner system
-├── Enemy movement
-├── Tower targeting
-├── Projectile simulation
-├── Damage / rewards / scoring
-├── Spatial grid
-├── Object pools
-├── ID Maps
-└── Canvas renderer
+├── Game Loop
+├── Enemy System
+├── Tower System
+├── Projectile System
+├── Wave System
+├── Collision / Damage
+├── Object Pools
+├── Spatial Grid
+└── Canvas Renderer
 ```
 
-React is responsible for low-frequency interface state. High-frequency entity state stays inside `GameEngine`, so thousands of moving entities are not represented as React components or React state updates.
+## React
 
----
+React is responsible for the user interface only.
 
-# Rendering approach
+It handles:
 
-The battlefield is rendered with **HTML Canvas 2D**. The interface around it uses React and normal DOM controls.
+Game HUD, Currency, Base health, Score, Wave information, Tower selection, Tower upgrade and selling controls, Pause/restart controls, Game speed controls, Victory and game-over screens, Performance benchmark information etc.
 
-The renderer uses Canvas 2D for the battlefield and keeps the dynamic entity simulation outside React. The production path avoids a separate full-canvas copy for static scenery because live measurements showed that copying the offscreen layer was not a consistent win on the target browser.
+The individual enemies, towers and projectiles are **not represented as React components or React state**.
 
-Objects outside the visible canvas region are skipped during dynamic rendering.
+## Game Engine
+
+The `GameEngine` class contains the actual simulation.
+
+It manages:
+
+Enemy movement, Tower targeting, Projectile movement, Damage, Wave progression, Tower placement, Tower upgrades, Tower selling, Player health, Currency, Score, Object pools, Spatial indexing, Rendering etc.
+
+The game engine runs independently of React and sends React only a lightweight snapshot containing information required by the UI.
+
+Rendering Approach
+
+The game uses the **HTML5 Canvas 2D API** for rendering the game world.
+
+React is used around the Canvas for the interface.
+
+This creates a clean separation.
+
+Using thousands of DOM elements or React components for moving entities would introduce unnecessary overhead.
 
 ---
 
@@ -81,12 +98,15 @@ Objects outside the visible canvas region are skipped during dynamic rendering.
 ## Towers
 
 ### Blaster
+
 Balanced rapid-fire tower with medium range and fast attacks.
 
 ### Cannon
+
 Slow heavy tower with high damage and splash damage.
 
 ### Sniper
+
 Long-range tower with very high single-target damage and a slow fire rate.
 
 Each tower can be upgraded to level 3.
@@ -94,15 +114,19 @@ Each tower can be upgraded to level 3.
 ## Enemies
 
 ### Drone
+
 Balanced baseline enemy.
 
 ### Runner
+
 Fast, fragile enemy designed to punish weak coverage.
 
 ### Tank
+
 Slow, high-health enemy that deals more base damage.
 
 ### Armored
+
 Durable enemy that receives reduced damage.
 
 Enemy composition, health, speed, and count increase as waves progress.
@@ -193,7 +217,7 @@ The in-game Performance Lab separates two measurements:
 The final stress benchmark uses:
 
 ```text
-2-second warm-up
+3-second warm-up
 30-second measurement
 ```
 
@@ -235,14 +259,14 @@ This makes the performance improvements measurable rather than relying only on a
 
 # Controls
 
-| Input | Action |
-|---|---|
-| Click tower card | Select tower type |
-| Click battlefield | Place selected tower |
-| Click existing tower | Select tower |
-| ESC | Cancel placement / clear selection |
-| SPACE | Pause / resume |
-| 1x / 2x / 3x | Change game speed |
+| Input                | Action                             |
+| -------------------- | ---------------------------------- |
+| Click tower card     | Select tower type                  |
+| Click battlefield    | Place selected tower               |
+| Click existing tower | Select tower                       |
+| ESC                  | Cancel placement / clear selection |
+| SPACE                | Pause / resume                     |
+| 1x / 2x / 3x         | Change game speed                  |
 
 ---
 
@@ -318,15 +342,3 @@ AI tools were used during development as coding and debugging assistants. The im
 The optimization work was driven by measured bottlenecks rather than blindly applying generated code.
 
 ---
-
-# Submission checklist
-
-- [ ] Live Vercel URL opens correctly
-- [ ] New Loom video shows face visibly throughout the demo
-- [ ] First 30 seconds show a real before/after optimization in action
-- [ ] Video explains the performance investigation and experiments
-- [ ] Video shows the final 5,000 / 100 / 1,000 stress workload
-- [ ] `NUMBERS.md` contains measured before/after values
-- [ ] README contains the final Loom URL
-- [ ] README contains the final GitHub URL
-- [ ] Submission form is submitted before the deadline
