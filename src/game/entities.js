@@ -1,4 +1,4 @@
-import { ENEMY_TYPES, TOWER_TYPES } from "./data";
+import { ENEMY_TYPES, TOWER_TYPES } from "./data.js";
 
 export class Enemy {
   constructor() {
@@ -75,6 +75,7 @@ export class Tower {
     this.totalSpent = 0;
 
     this.targetId = 0;
+    this.statsCache = null;
   }
 
   init(id, type, x, y) {
@@ -92,6 +93,7 @@ export class Tower {
     this.totalSpent = TOWER_TYPES[type].cost;
 
     this.targetId = 0;
+    this.statsCache = null;
   }
 }
 

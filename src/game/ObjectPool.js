@@ -4,6 +4,7 @@ export class ObjectPool {
     this.reset = reset;
 
     this.items = [];
+    this.freeItems = [];
 
     for (let i = 0; i < initialSize; i += 1) {
       const item = factory();
@@ -11,29 +12,30 @@ export class ObjectPool {
       item.active = false;
 
       this.items.push(item);
+      this.freeItems.push(item);
     }
   }
 
   acquire() {
-    for (let i = 0; i < this.items.length; i += 1) {
-      if (!this.items[i].active) {
-        this.items[i].active = true;
+    let item = this.freeItems.pop();
 
-        return this.items[i];
-      }
+    if (!item) {
+      item = this.factory();
+      this.items.push(item);
     }
 
-    const item = this.factory();
-
     item.active = true;
-
-    this.items.push(item);
 
     return item;
   }
 
   release(item) {
+    if (!item?.active) {
+      return;
+    }
+
     this.reset(item);
     item.active = false;
+    this.freeItems.push(item);
   }
 }

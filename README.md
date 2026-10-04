@@ -1,510 +1,332 @@
 <p align="center">
-  <img src="public/neon-bastion-banner.png" width="35%" alt="banner">
+  <img src="public/neon-bastion-banner.png" width="35%" alt="Neon Bastion banner">
 </p>
 <p align="center">
-  <img src="public/neon-bastion.gif" width="75%" alt="gameplay">
+  <img src="public/neon-bastion.gif" width="75%" alt="Neon Bastion gameplay preview">
 </p>
 
 # Neon Bastion - Hold the Line
 
-A browser-based tower defense game.
-
-The objective is simple: defend the base against progressively harder waves of enemies by strategically placing, upgrading, and selling defensive towers.
-
-The game contains 50 waves, 3 different tower types, 4 enemy types, automatic tower targeting, tower upgrades, selling, currency, scoring, pause/restart controls, game-speed controls, victory and game-over states, and a dedicated performance stress test.
-
----
+A polished browser-based tower defense game built with **React, JavaScript, Vite, and Canvas 2D**.
 
 ## Links
 
-- **Deployed Game:** https://neon-bastion-v2.vercel.app/
-- **Demo Video:** https://www.loom.com/share/b4e9558388cf4de7bc50f2791e8d9774
+- **Live Game:** https://neon-bastion-v2.vercel.app/
+- **Demo Video:** _add the new Loom link after recording_
+- **Source Code:** _add the GitHub repository link_
+- **Performance Numbers:** [`NUMBERS.md`](./NUMBERS.md)
 
 ---
 
-# 1. Architecture
+## Requirements covered
 
-The game is divided into two main parts:
+- 50 playable waves
+- 3 meaningfully different tower types
+- 4 meaningfully different enemy types
+- Automatic tower targeting and attacks
+- Path-following enemies
+- Tower placement, upgrades, and selling
+- Base health, currency, score, victory, and game over
+- Pause, restart, and 1x / 2x / 3x speed controls
+- Progressive difficulty
+- Browser-only gameplay with no required external runtime service
+- Stress workload of exactly **5,000 enemies + 100 towers + 1,000 projectiles**
+- One central animation loop rather than one timer/loop per entity
+
+---
+
+# Architecture
 
 ```text
-React
+React UI
 │
-├── HUD
-├── Tower Shop
-├── Tower Upgrade / Sell UI
-├── Pause / Restart Controls
-├── Performance UI
-└── Victory / Game Over Screens
+├── HUD / score / health / wave
+├── Tower shop
+├── Upgrade / sell controls
+├── Pause / restart / speed controls
+├── Performance Lab
+└── Victory / game-over overlays
         │
-        ↓
-Game Engine
+        ▼
+GameEngine
 │
-├── Game Loop
-├── Enemy System
-├── Tower System
-├── Projectile System
-├── Wave System
-├── Collision / Damage
-├── Object Pools
-├── Spatial Grid
-└── Canvas Renderer
+├── Fixed-step simulation
+├── Wave / spawner system
+├── Enemy movement
+├── Tower targeting
+├── Projectile simulation
+├── Damage / rewards / scoring
+├── Spatial grid
+├── Object pools
+├── ID Maps
+└── Canvas renderer
 ```
 
-## React
-
-React is responsible for the user interface only.
-
-It handles:
-
-Game HUD, Currency, Base health, Score, Wave information, Tower selection, Tower upgrade and selling controls, Pause/restart controls, Game speed controls, Victory and game-over screens, Performance benchmark information etc.
-
-The individual enemies, towers and projectiles are **not represented as React components or React state**.
-
-## Game Engine
-
-The `GameEngine` class contains the actual simulation.
-
-It manages:
-
-Enemy movement, Tower targeting, Projectile movement, Damage, Wave progression, Tower placement, Tower upgrades, Tower selling, Player health, Currency, Score, Object pools, Spatial indexing, Rendering etc.
-
-The game engine runs independently of React and sends React only a lightweight snapshot containing information required by the UI.
+React is responsible for low-frequency interface state. High-frequency entity state stays inside `GameEngine`, so thousands of moving entities are not represented as React components or React state updates.
 
 ---
 
-# 2. Rendering Approach
+# Rendering approach
 
-The game uses the **HTML5 Canvas 2D API** for rendering the game world.
+The battlefield is rendered with **HTML Canvas 2D**. The interface around it uses React and normal DOM controls.
 
-React is used around the Canvas for the interface.
+The renderer uses Canvas 2D for the battlefield and keeps the dynamic entity simulation outside React. The production path avoids a separate full-canvas copy for static scenery because live measurements showed that copying the offscreen layer was not a consistent win on the target browser.
 
-This creates a clean separation.
-
-Using thousands of DOM elements or React components for moving entities would introduce unnecessary overhead.
+Objects outside the visible canvas region are skipped during dynamic rendering.
 
 ---
 
-# 3. Game Systems
-
-## Enemies
-
-There are four enemy types:
-
-### Drone
-
-The standard balanced enemy.
-
-- Medium health
-- Medium speed
-- Normal damage to the base
-
-### Runner
-
-A fast but weaker enemy.
-
-- Low health
-- High movement speed
-- Designed to pressure towers and punish weak coverage
-
-### Tank
-
-A slow, high-health enemy.
-
-- Very high health
-- Slow movement
-- Higher base damage
-
-### Armored
-
-A resistant enemy.
-
-- Medium/high health
-- Moderate speed
-- Takes reduced damage
-
-The enemy types are deliberately different so that tower selection and placement matter.
-
----
+# Game systems
 
 ## Towers
 
-There are three tower types.
-
 ### Blaster
-
-A balanced rapid-fire tower.
-
-- Medium damage
-- Medium range
-- Fast firing
+Balanced rapid-fire tower with medium range and fast attacks.
 
 ### Cannon
-
-A slow heavy tower.
-
-- High damage
-- Slower fire rate
-- Splash damage
+Slow heavy tower with high damage and splash damage.
 
 ### Sniper
-
-A long-range high-damage tower.
-
-- Very long range
-- Very high single-target damage
-- Slow fire rate
+Long-range tower with very high single-target damage and a slow fire rate.
 
 Each tower can be upgraded to level 3.
 
-The tower's statistics change with each upgrade, including damage, range and firing speed.
+## Enemies
+
+### Drone
+Balanced baseline enemy.
+
+### Runner
+Fast, fragile enemy designed to punish weak coverage.
+
+### Tank
+Slow, high-health enemy that deals more base damage.
+
+### Armored
+Durable enemy that receives reduced damage.
+
+Enemy composition, health, speed, and count increase as waves progress.
 
 ---
 
-# 4. Wave System
+# Game loop and state architecture
 
-The game contains **50 waves**.
+The engine uses one `requestAnimationFrame()` loop.
 
-Enemy count and difficulty increase progressively through:
+Simulation uses a fixed timestep of `1 / 60` second. Real elapsed time is accumulated and consumed in fixed simulation steps, which keeps gameplay behavior consistent across refresh rates.
 
-- Number of enemies
-- Enemy health
-- Enemy speed
-- Enemy composition
-- Stronger enemy types
-
-Different enemy types are introduced gradually rather than placing every enemy type into Wave 1.
-
-The later waves contain significantly larger enemy groups and stronger combinations.
-
-Successfully completing all 50 waves produces the victory state.
+React receives lightweight snapshots approximately every 100ms instead of receiving every entity position every rendered frame.
 
 ---
 
-# 5. Major Performance Bottlenecks
+# Performance investigation
 
-The initial implementation exposed several potential bottlenecks.
-
-The most important challenge was that the assignment requires:
+The assignment stress workload is:
 
 ```text
 5,000 active enemies
-100 towers
+100 active towers
 1,000 active projectiles
 ```
 
-at the same time.
+The first iteration exposed a severe performance problem under this workload, reaching roughly the **10-20 FPS range** during the stress test. That made profiling and architecture a core part of the implementation rather than an afterthought.
 
-The major areas that needed attention were:
+The current Performance Lab reproduces the required workload and provides short live A/B experiments so the effect of the selected optimizations can be measured in the browser without freezing the game UI.
 
-### 1. Rendering thousands of objects
+## Main bottlenecks investigated
 
-Rendering thousands of enemies and projectiles every frame can become expensive, especially when every entity requires multiple Canvas operations.
+### Enemy targeting
 
-### 2. Enemy targeting
+A naive implementation could make 100 towers compare against 5,000 enemies, creating approximately 500,000 candidate checks during one complete targeting pass.
 
-If every tower checked every enemy, the cost would grow rapidly.
+### High-frequency allocations
 
-With `100 towers × 5,000 enemies` that could require approximately 500,000 candidate checks for a single targeting pass.
+Temporary direction objects in projectile movement created avoidable short-lived allocations.
 
-### 3. Object creation and garbage collection
+### Rendering overhead
 
-Constantly creating and destroying thousands of enemies and projectiles can generate garbage and cause garbage-collection pauses.
+Canvas drawing was profiled as part of the total frame cost. A cached offscreen scenery layer was tested, but it was not kept as a production optimization because the live measurements did not show a consistent improvement on the target browser.
 
-### 4. React rendering overhead
+### Entity churn
 
-Putting thousands of moving entities into React state would cause unnecessary React updates and was therefore avoided.
+Enemy and projectile creation/destruction can create garbage-collection pressure. Reusable pools reduce this churn.
 
-### 5. Large frame-time spikes
+### UI work
 
-The initial stress test showed severe frame drops, including approximately 10-20 FPS in the initial implementation.
-
-This made it clear that simply making the gameplay functional was not enough. The underlying architecture needed to be optimized.
+Thousands of moving entities should not be synchronized through React state every frame.
 
 ---
 
-# 6. Initial LLM Implementation
+# Optimizations
 
-The first implementation was used as a baseline before performance optimization.
+## 1. Spatial grid for target lookup
 
-Under the assignment stress scenario, with approximately:
+The map is partitioned into fixed-size cells. Enemies are inserted into the grid each simulation update. A tower queries only nearby cells instead of scanning all 5,000 enemies.
 
-```text
-5,000 enemies
-100 towers
-1,000 projectiles
-```
+The Performance Lab measures this optimization **OFF and ON against the same 5,000 / 100 / 1,000 workload**.
 
-the initial implementation dropped into roughly the:
+## 2. Object pooling
 
-`10-20 FPS` range.
+Enemies and projectiles are reused through pools. The pool uses a free-item stack so acquisition is O(1) instead of scanning the complete pool for an inactive object.
 
-Chrome Performance profiling showed significant frame-time spikes and made it clear that the initial implementation was not suitable for the required stress workload.
+The Performance Lab measures fresh object allocation against pooled acquire/release operations using the same scale of object churn.
 
-This initial failure was used as the baseline for subsequent optimization.
+## 3. Direct ID lookup
 
----
+Enemies and towers are stored in `Map` objects keyed by ID. Projectiles can resolve targets directly without searching the entire entity array.
 
-# 7. Optimizations Used
+## 4. Render culling
 
-## 7.1 Single Game Loop
+Dynamic entities outside the visible canvas region are skipped during rendering.
 
-Instead of using one timer or animation loop for each entity, the game uses one central `requestAnimationFrame()` loop.
+## 5. Cached tower statistics
 
-This means the entire simulation is updated centrally.
+Derived tower statistics are cached and invalidated only when a tower is upgraded, avoiding repeated object creation during targeting and rendering.
 
----
+# Performance measurement
 
-## 7.2 Fixed Timestep
+The in-game Performance Lab separates two measurements:
 
-The game simulation runs using a fixed timestep:
-
-`1 / 60 second`
-
-This makes simulation behavior more consistent across different display refresh rates.
-
----
-
-## 7.3 React / Game Engine Separation
-
-The game entities remain inside the game engine.
-
-React receives only lightweight UI snapshots.
-
-The positions of thousands of enemies and projectiles are never pushed through React state every frame.
-
----
-
-## 7.4 Object Pooling
-
-Enemies and projectiles use reusable object pools.
-
-This reduces unnecessary memory allocations and garbage-collection pressure.
-
----
-
-## 7.5 Spatial Grid
-
-The map is divided into a spatial grid.
-
-Instead of having towers search the complete enemy list, each tower queries only nearby grid cells.
-
-A tower only needs to consider enemies in cells around it.
-
-This dramatically reduces unnecessary target checks.
-
----
-
-## 7.6 Direct Enemy Lookup
-
-Enemies are stored in a `Map` using their unique IDs.
-
-This allows projectiles to find their target directly rather than scanning the entire enemy array.
-
----
-
-## 7.7 Rendering Culling
-
-Objects outside the visible game area are skipped during rendering.
-
-This prevents unnecessary rendering work for objects that the player cannot see.
-
----
-
-# 8. Performance Measurement
-
-Performance was measured in two ways.
-
-## Chrome DevTools Performance
-
-Chrome DevTools Performance was used to inspect:
-
-- Frame durations
-- Rendering
-- Long frames
-- Dropped frames
-
-The initial implementation produced severe frame drops under stress.
-
----
-
-## In-Game Performance Profiler
-
-A lightweight profiler was added to the game engine to measure:
-
-- Total frame time
-- Update time
-- Render time
-- Enemy update time
-- Tower update time
-- Projectile update time
-
-This was used to identify which systems were consuming the most time.
-
----
-
-# 9. Final Stress Test
+- **Frame interval:** time between browser `requestAnimationFrame` callbacks. This is the value used for the assignment's FPS criteria.
+- **CPU work:** JavaScript time spent updating and rendering the game during a frame.
 
 The final stress benchmark uses:
 
 ```text
+2-second warm-up
+30-second measurement
+```
+
+and checks:
+
+```text
+≥45 FPS for at least 95% of measured frames
+<5% of measured frames above 33ms
+```
+
+The stress harness keeps the required entity counts stable while measuring:
+
+```text
 5,000 enemies
 100 towers
 1,000 projectiles
 ```
 
-The benchmark includes:
+See [`NUMBERS.md`](./NUMBERS.md) for the live A/B experiment results and final benchmark numbers captured for the submission.
+
+---
+
+# Performance Lab
+
+The in-game Performance Lab provides:
+
+- Initial-style baseline benchmark
+- Spatial-grid A/B test
+- Object-pool A/B test
+- Final 30-second benchmark
+- Live frame interval and CPU timings
+- Exact stress-workload counters
+
+Each A/B experiment loads the same stress dataset, measures the selected operation with the optimization disabled, then repeats it with the optimization enabled.
+
+This makes the performance improvements measurable rather than relying only on a single final number.
+
+---
+
+# Controls
+
+| Input | Action |
+|---|---|
+| Click tower card | Select tower type |
+| Click battlefield | Place selected tower |
+| Click existing tower | Select tower |
+| ESC | Cancel placement / clear selection |
+| SPACE | Pause / resume |
+| 1x / 2x / 3x | Change game speed |
+
+---
+
+# Project structure
 
 ```text
-2-second warm-up and
-30-second measurement period
-```
-
-The warm-up exists to exclude one-time initialization costs from the sustained-performance measurement.
-
-The benchmark is intentionally kept separate from the normal gameplay experience so that the performance test does not interfere with normal game balance.
-
----
-
-# 10. The Major Challenge
-
-The biggest challenge was **performance architecture**.
-
-Building the basic tower defense mechanics was relatively straightforward compared with making the simulation behave efficiently with thousands of simultaneously active entities.
-
-The initial implementation was functional but showed that simply having the game work was not enough.
-
-The main challenge was understanding where the workload was actually coming from and then changing the architecture rather than applying random micro-optimizations.
-
-The most important lessons were:
-
-1. React should not be responsible for rendering thousands of high-frequency game entities.
-2. A game should use one central simulation loop rather than one timer per entity.
-3. Data structures matter significantly when entity counts become large.
-4. Spatial partitioning is useful when many objects repeatedly need proximity checks.
-5. Profiling should happen before optimizing so that effort is spent on actual bottlenecks.
-
----
-
-# 11. AI Usage
-
-AI tools were used throughout development.
-
-They were primarily used for:
-
-- Brainstorming architecture
-- Debugging issues
-- Reviewing performance results
-- Suggesting optimization techniques
-- Improving UI ideas
-
-The initial AI-generated implementation was deliberately treated as a starting point rather than the final implementation.
-
-The initial stress test exposed performance problems, which led to profiling, architectural changes, and performance optimization.
-
----
-
-# 12. Controls
-
-### Mouse
-
-- Select a tower from the sidebar
-- Click a valid location to place it
-- Click an existing tower to select it
-
-### Keyboard
-
-```text
-SPACE  → Pause / Resume
-ESC    → Cancel current selection
-```
-
-### Game controls
-
-`1x, 2x, 3x` control the simulation speed.
-
-The game can also be restarted at any time.
-
----
-
-# 13. Project Structure
-
-```text
-src/
+neon-bastion/
+├── public/
+│   ├── favicon.ico
+│   ├── neon-bastion-banner.png
+│   └── neon-bastion.gif
 │
-├── App.jsx
-├── main.jsx
-├── styles.css
+├── src/
+│   ├── main.jsx
+│   ├── App.jsx
+│   ├── index.css
+│   │
+│   └── game/
+│       ├── GameEngine.js
+│       ├── ObjectPool.js
+│       ├── SpatialGrid.js
+│       ├── data.js
+│       ├── entities.js
+│       └── utils.js
 │
-└── game/
-    │
-    ├── data.js
-    ├── entities.js
-    ├── utils.js
-    ├── ObjectPool.js
-    ├── SpatialGrid.js
-    └── GameEngine.js
+├── NUMBERS.md
+├── README.md
+├── package.json
+├── package-lock.json
+├── vite.config.js
+└── .gitignore
 ```
-
-### `App.jsx`
-
-React user interface and HUD.
-
-### `GameEngine.js`
-
-Main simulation, game loop, combat, waves and rendering.
-
-### `data.js`
-
-Tower data, enemy data, map configuration and wave configuration.
-
-### `entities.js`
-
-Enemy, Tower and Projectile data structures.
-
-### `ObjectPool.js`
-
-Reusable object pools for entities.
-
-### `SpatialGrid.js`
-
-Spatial partitioning for efficient proximity queries.
-
-### `utils.js`
-
-Math and geometry helper functions.
 
 ---
 
-# 14. Deployment
-
-The project is a client-side Vite application and does not require a backend or database.
-
-Production build:
+# Local development
 
 ```bash
 npm install
-npm run build
+npm run dev
 ```
 
-The generated application can be deployed to any static hosting provider.
+For a production build:
 
-The deployed version for this submission is:
+```bash
+npm run build
+npm run preview
+```
 
-**https://neon-bastion-v2.vercel.app/**
+---
+
+# Deployment
+
+The game is a Vite client-side application and can be deployed directly to Vercel.
+
+Recommended Vercel settings:
+
+```text
+Framework Preset: Vite
+Build Command: npm run build
+Output Directory: dist
+Install Command: npm install
+```
+
+The generated `dist/` directory is intentionally ignored by Git because the deployment platform builds it from source.
 
 ---
 
-# 15. Demo Video
+# AI usage
 
-The required demo video is available here:
+AI tools were used during development as coding and debugging assistants. The important design decisions were reviewed and validated through implementation, profiling, and live browser tests.
 
-**https://www.loom.com/share/b4e9558388cf4de7bc50f2791e8d9774**
-
-The video demonstrates:
-
-1. The initial LLM implementation and the visible performance breaking point.
-2. The performance problems and the optimization approach.
-3. The optimized implementation under the final stress workload.
-4. The completed playable game and its major mechanics.
+The optimization work was driven by measured bottlenecks rather than blindly applying generated code.
 
 ---
+
+# Submission checklist
+
+- [ ] Live Vercel URL opens correctly
+- [ ] New Loom video shows face visibly throughout the demo
+- [ ] First 30 seconds show a real before/after optimization in action
+- [ ] Video explains the performance investigation and experiments
+- [ ] Video shows the final 5,000 / 100 / 1,000 stress workload
+- [ ] `NUMBERS.md` contains measured before/after values
+- [ ] README contains the final Loom URL
+- [ ] README contains the final GitHub URL
+- [ ] Submission form is submitted before the deadline
