@@ -354,7 +354,7 @@ function App() {
                   onClick={() => engine.runStressTest()}
                   disabled={snapshot?.benchmark?.active}
                 >
-                  Run 20s Final Stress Test
+                  Run Final Stress Test
                 </button>
               </div>
 
@@ -362,8 +362,8 @@ function App() {
                 <summary>Optimization evidence (optional)</summary>
                 <p className="hint experiment-copy">
                   These optional checks compare spatial-grid and object-pool operations on the same
-                  5,000-enemy workload. They run locally without moving the page, show each stage
-                  briefly, and restore a fresh game state when complete.
+                  5,000-enemy workload. They run locally, show each stage briefly, and restore a
+                  fresh game state when complete.
                 </p>
 
                 <div className="experiment-grid">
@@ -444,7 +444,7 @@ function App() {
                   <div className="benchmark-result-title">
                     {snapshot.benchmark.kind === "experiment"
                       ? "Optimization Evidence Complete"
-                      : "20s Stress Test Complete"}
+                      : "Stress Test Complete"}
                   </div>
 
                   {snapshot.benchmark.kind === "experiment" &&
