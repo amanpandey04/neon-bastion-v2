@@ -301,7 +301,7 @@ function App() {
         <details className="dev-tools panel performance-lab" open>
           <summary>
             <span>Performance Lab</span>
-            <span className="summary-note">stress test · viewport aware measurements</span>
+            <span className="summary-note">stress test</span>
           </summary>
 
           <div className="dev-content performance-content">
@@ -359,7 +359,7 @@ function App() {
               </div>
 
               <details className="experiment-actions">
-                <summary>Optimization evidence (optional)</summary>
+                <summary>Optimization evidence</summary>
                 <p className="hint experiment-copy">
                   These optional checks compare spatial-grid and object-pool operations on the same
                   5,000-enemy workload. They run locally, show each stage briefly, and restore a

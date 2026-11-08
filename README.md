@@ -46,7 +46,6 @@ React
 ├── Pause / Restart Controls
 ├── Performance UI
 └── Victory / Game Over Screens
-        │
         ↓
 Game Engine
 │
@@ -145,7 +144,7 @@ React receives lightweight snapshots approximately every 100ms during gameplay. 
 
 # Performance investigation
 
-The assignment stress workload is:
+The stress workload is:
 
 ```text
 5,000 active enemies
@@ -222,8 +221,6 @@ The in-game Performance Lab separates two measurements:
 - **Frame interval:** time between browser `requestAnimationFrame` callbacks. This is the value used for the assignment's FPS criteria.
 - **CPU work:** JavaScript time spent updating and rendering the game during a frame.
 
-The 20-second benchmark clock uses the actual elapsed time between animation-frame callbacks. The simulation itself still caps the per-step elapsed delta to avoid large catch-up updates after a stall. Path-segment unit vectors are precomputed, so enemy movement avoids repeating a square-root and vector normalization for every enemy on every fixed update. During benchmarking, the normal rolling-FPS ring buffer is skipped because the benchmark maintains its own frame counters. Spatial-grid insertion uses direct cell-index arithmetic for the 5,000 enemy updates.
-
 The final stress benchmark uses:
 
 ```text
@@ -246,7 +243,7 @@ The stress harness keeps the required entity counts stable while measuring:
 1,000 projectiles
 ```
 
-The optional before/after checks compare the spatial-grid and object-pool operations used by the game. They run only when started and never add work to normal gameplay. Each check temporarily loads the stress dataset, measures the operation before and after, then returns the game to a fresh state. These isolated CPU microbenchmarks do not scroll the page or run the Canvas renderer, and their lock is released after each run so either comparison can be repeated or followed by the other. They are separate from the viewport-aware final stress benchmark. See [`NUMBERS.md`](./NUMBERS.md) for the recorded optimization and stress-test measurements.
+The before/after checks compare the spatial-grid and object-pool operations used by the game. They run only when started and never add work to normal gameplay. Each check temporarily loads the stress dataset, measures the operation before and after, then returns the game to a fresh state. These isolated CPU microbenchmarks do not scroll the page or run the Canvas renderer, and their lock is released after each run so either comparison can be repeated or followed by the other. They are separate from the viewport-aware final stress benchmark. See [`NUMBERS.md`](./NUMBERS.md) for the recorded optimization and stress-test measurements.
 
 ---
 
@@ -255,13 +252,13 @@ The optional before/after checks compare the spatial-grid and object-pool operat
 The in-game Performance Lab is placed below the game so the right sidebar stays focused on gameplay controls. It provides:
 
 - A final 20-second stress benchmark
-- Optional spatial-grid and object-pool before/after checks for optimization evidence
+- Spatial-grid and object-pool before/after checks for optimization evidence
 - Live frame interval and CPU timings
 - Exact stress-workload counters
 
 Starting any benchmark automatically scrolls the canvas into view. A countdown is displayed over the battlefield during warm-up and measurement. Measurements are accepted only while at least 72% of the canvas is visible and the browser tab is active. Visibility is tracked with `IntersectionObserver` rather than a layout read on every animation frame. If the canvas is scrolled away or the tab is hidden, the benchmark pauses and restarts its warm-up when visibility is restored. When a run completes, the page automatically scrolls back down to the result panel.
 
-Each optional before/after experiment loads the same stress dataset, measures the selected operation with the optimization disabled, then repeats it with the optimization enabled. These checks are deliberately separate from the final stress benchmark because they temporarily use the engine to perform isolated measurements.
+Each before/after experiment loads the same stress dataset, measures the selected operation with the optimization disabled, then repeats it with the optimization enabled. These checks are deliberately separate from the final stress benchmark because they temporarily use the engine to perform isolated measurements.
 
 This makes the performance changes measurable rather than relying only on a single final number.
 

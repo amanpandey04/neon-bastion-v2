@@ -804,14 +804,14 @@ button.primary {
   display: none;
 }
 
-.dev-tools summary::after {
+.dev-tools > summary::after {
   content: "+";
   color: #617993;
   font-size: 15px;
   line-height: 1;
 }
 
-.dev-tools[open] summary::after {
+.dev-tools[open] > summary::after {
   content: "−";
 }
 
@@ -874,13 +874,13 @@ button.primary {
   display: none;
 }
 
-.dev-tools summary::after {
+.dev-tools > summary::after {
   content: "+";
   color: #627b97;
   font-weight: 900;
 }
 
-.dev-tools[open] summary::after {
+.dev-tools[open] > summary::after {
   content: "−";
 }
 
