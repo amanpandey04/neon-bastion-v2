@@ -301,7 +301,6 @@ function App() {
         <details className="dev-tools panel performance-lab" open>
           <summary>
             <span>Performance Lab</span>
-            <span className="summary-note">stress test · viewport aware measurements</span>
           </summary>
 
           <div className="dev-content performance-content">
