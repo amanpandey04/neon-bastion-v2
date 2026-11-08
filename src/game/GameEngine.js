@@ -580,10 +580,7 @@ export class GameEngine {
     // REAL TIME DELTA
     // --------------------------------------------------------
 
-    const rawFrameDelta = Math.max(
-      0,
-      (timestamp - this.lastTime) / 1000,
-    );
+    const rawFrameDelta = Math.max(0, (timestamp - this.lastTime) / 1000);
 
     const rawDelta = Math.min(rawFrameDelta, 0.1);
 
@@ -782,10 +779,7 @@ export class GameEngine {
     // --------------------------------------------------------
 
     if (this.state.notification.timer > 0) {
-      this.state.notification.timer = Math.max(
-        0,
-        this.state.notification.timer - dt,
-      );
+      this.state.notification.timer = Math.max(0, this.state.notification.timer - dt);
     }
 
     // --------------------------------------------------------
@@ -873,11 +867,7 @@ export class GameEngine {
 
     this.state.waveConfig = config;
 
-    this.showNotification(
-      `WAVE ${this.state.wave}`,
-      this.getWaveMessage(this.state.wave),
-      2.2,
-    );
+    this.showNotification(`WAVE ${this.state.wave}`, this.getWaveMessage(this.state.wave), 2.2);
 
     this.emitSnapshot(true);
   }
@@ -910,11 +900,7 @@ export class GameEngine {
 
       if (this.state.wave >= this.state.maxWave) {
         this.state.victory = true;
-        this.showNotification(
-          "BASTION SECURED",
-          "All 50 waves have been defeated.",
-          4,
-        );
+        this.showNotification("BASTION SECURED", "All 50 waves have been defeated.", 4);
       } else {
         this.showNotification(
           `WAVE ${this.state.wave} CLEARED`,
@@ -1122,10 +1108,7 @@ export class GameEngine {
       level: tower.level,
       damage: data.baseDamage * (1 + levelIndex * 0.62),
       range: data.baseRange * (1 + levelIndex * 0.1),
-      fireRate: Math.max(
-        0.16,
-        data.baseFireRate * (1 - levelIndex * 0.1),
-      ),
+      fireRate: Math.max(0.16, data.baseFireRate * (1 - levelIndex * 0.1)),
       projectileSpeed: data.projectileSpeed,
       projectileRadius: data.projectileRadius,
       splashRadius: data.splashRadius || 0,
@@ -1148,12 +1131,7 @@ export class GameEngine {
     const stats = this.getTowerStats(tower);
 
     const candidates = this.performanceOptions.spatialGrid
-      ? this.grid.queryCircle(
-          tower.x,
-          tower.y,
-          stats.range,
-          this.targetQuery,
-        )
+      ? this.grid.queryCircle(tower.x, tower.y, stats.range, this.targetQuery)
       : this.enemies;
 
     let best = null;
@@ -1311,9 +1289,7 @@ export class GameEngine {
       // ------------------------------------------------------
 
       if (this.state.stressMode) {
-        const owner = projectile.towerId
-          ? this.towersById.get(projectile.towerId)
-          : null;
+        const owner = projectile.towerId ? this.towersById.get(projectile.towerId) : null;
 
         if (!target) {
           target = owner?.targetId
@@ -1354,11 +1330,12 @@ export class GameEngine {
       // ------------------------------------------------------
 
       if (this.state.stressMode) {
-        const owner = projectile.towerId
-          ? this.towersById.get(projectile.towerId)
-          : null;
+        const owner = projectile.towerId ? this.towersById.get(projectile.towerId) : null;
 
-        if (distanceToTarget <= step + target.radius + projectile.radius || projectile.lifetime <= 0) {
+        if (
+          distanceToTarget <= step + target.radius + projectile.radius ||
+          projectile.lifetime <= 0
+        ) {
           if (owner) {
             // Reset directly at the owning tower for another visible shot.
             projectile.x = owner.x;
@@ -1814,12 +1791,7 @@ export class GameEngine {
   // ==========================================================
 
   handlePointer(event) {
-    if (
-      this.state.paused ||
-      this.state.victory ||
-      this.state.gameOver ||
-      this.state.stressMode
-    ) {
+    if (this.state.paused || this.state.victory || this.state.gameOver || this.state.stressMode) {
       return;
     }
 
@@ -1952,14 +1924,7 @@ export class GameEngine {
 
     for (let y = 36; y <= 524; y += 44) {
       for (let x = 36; x <= 916; x += 44) {
-        if (
-          isPointNearPath(
-            x,
-            y,
-            this.path,
-            34,
-          )
-        ) {
+        if (isPointNearPath(x, y, this.path, 34)) {
           continue;
         }
 
@@ -1992,12 +1957,7 @@ export class GameEngine {
         for (let j = 0; j < selectedCandidates.length; j += 1) {
           nearestDistance = Math.min(
             nearestDistance,
-            distanceSq(
-              candidate.x,
-              candidate.y,
-              selectedCandidates[j].x,
-              selectedCandidates[j].y,
-            ),
+            distanceSq(candidate.x, candidate.y, selectedCandidates[j].x, selectedCandidates[j].y),
           );
         }
 
@@ -2019,12 +1979,7 @@ export class GameEngine {
       const position = selectedCandidates[i];
       const tower = new Tower();
 
-      tower.init(
-        this.nextTowerId++,
-        towerTypes[i % towerTypes.length],
-        position.x,
-        position.y,
-      );
+      tower.init(this.nextTowerId++, towerTypes[i % towerTypes.length], position.x, position.y);
 
       tower.level = 3;
       tower.statsCache = null;
@@ -2044,13 +1999,7 @@ export class GameEngine {
       const b = this.path[pathIndex + 1];
       const t = (i * 0.173) % 1;
 
-      enemy.init(
-        this.nextEnemyId++,
-        enemyTypes[i % enemyTypes.length],
-        1.7,
-        1,
-        a,
-      );
+      enemy.init(this.nextEnemyId++, enemyTypes[i % enemyTypes.length], 1.7, 1, a);
 
       enemy.x = a.x + (b.x - a.x) * t;
       enemy.y = a.y + (b.y - a.y) * t;
@@ -2482,11 +2431,12 @@ export class GameEngine {
       this.benchmark.warmupElapsed += rawDelta;
       this.state.benchmark.warmupElapsed = this.benchmark.warmupElapsed;
 
-      if (this.benchmark.warmupElapsed >= (
-        this.benchmark.kind === "experiment"
+      if (
+        this.benchmark.warmupElapsed >=
+        (this.benchmark.kind === "experiment"
           ? EXPERIMENT_WARMUP_SECONDS
-          : BENCHMARK_WARMUP_SECONDS
-      )) {
+          : BENCHMARK_WARMUP_SECONDS)
+      ) {
         this.benchmark.phase = "measuring";
         this.benchmark.measuredElapsed = 0;
         this.benchmark.totalFrames = 0;
@@ -2525,8 +2475,7 @@ export class GameEngine {
       this.benchmark.badFrames += 1;
     }
 
-    this.benchmark.averageFrameMs =
-      this.benchmark.totalFrameTime / this.benchmark.totalFrames;
+    this.benchmark.averageFrameMs = this.benchmark.totalFrameTime / this.benchmark.totalFrames;
 
     this.benchmark.averageCpuFrameMs =
       this.benchmark.totalCpuFrameTime / this.benchmark.totalFrames;
@@ -2534,8 +2483,7 @@ export class GameEngine {
     this.benchmark.pass45FpsPercent =
       (this.benchmark.goodFrames / this.benchmark.totalFrames) * 100;
 
-    this.benchmark.over33msPercent =
-      (this.benchmark.badFrames / this.benchmark.totalFrames) * 100;
+    this.benchmark.over33msPercent = (this.benchmark.badFrames / this.benchmark.totalFrames) * 100;
 
     this.state.benchmark = {
       ...this.state.benchmark,
@@ -2561,11 +2509,12 @@ export class GameEngine {
       complete: false,
     };
 
-    const duration = this.benchmark.kind === "experiment"
-      ? EXPERIMENT_DURATION_SECONDS
-      : this.benchmark.kind === "baseline"
-        ? BASELINE_DURATION_SECONDS
-        : BENCHMARK_DURATION_SECONDS;
+    const duration =
+      this.benchmark.kind === "experiment"
+        ? EXPERIMENT_DURATION_SECONDS
+        : this.benchmark.kind === "baseline"
+          ? BASELINE_DURATION_SECONDS
+          : BENCHMARK_DURATION_SECONDS;
 
     if (this.benchmark.measuredElapsed >= duration) {
       if (this.benchmark.kind === "experiment" && this.benchmark.experimentStage === "before") {
@@ -2688,12 +2637,7 @@ export class GameEngine {
   render() {
     const ctx = this.ctx;
 
-    ctx.clearRect(
-      0,
-      0,
-      MAP.width,
-      MAP.height,
-    );
+    ctx.clearRect(0, 0, MAP.width, MAP.height);
 
     if (this.performanceOptions.staticCanvas) {
       ctx.drawImage(this.staticCanvas, 0, 0);
@@ -2889,17 +2833,14 @@ export class GameEngine {
     const type = this.selectedBuildType;
     const data = TOWER_TYPES[type];
     const valid =
-      this.state.money >= data.cost &&
-      this.canPlaceTower(this.pointerX, this.pointerY, type);
+      this.state.money >= data.cost && this.canPlaceTower(this.pointerX, this.pointerY, type);
 
     const stats = this.getTowerStats({
       type,
       level: 1,
     });
 
-    const color = valid
-      ? data.color
-      : "#ff6f7d";
+    const color = valid ? data.color : "#ff6f7d";
 
     ctx.save();
 
@@ -2907,24 +2848,12 @@ export class GameEngine {
 
     ctx.fillStyle = color;
     ctx.beginPath();
-    ctx.arc(
-      this.pointerX,
-      this.pointerY,
-      16,
-      0,
-      Math.PI * 2,
-    );
+    ctx.arc(this.pointerX, this.pointerY, 16, 0, Math.PI * 2);
     ctx.fill();
 
     ctx.globalAlpha = 0.08;
     ctx.beginPath();
-    ctx.arc(
-      this.pointerX,
-      this.pointerY,
-      stats.range,
-      0,
-      Math.PI * 2,
-    );
+    ctx.arc(this.pointerX, this.pointerY, stats.range, 0, Math.PI * 2);
     ctx.fill();
 
     ctx.globalAlpha = 0.75;
@@ -2932,13 +2861,7 @@ export class GameEngine {
     ctx.lineWidth = 2;
     ctx.setLineDash([6, 5]);
     ctx.beginPath();
-    ctx.arc(
-      this.pointerX,
-      this.pointerY,
-      stats.range,
-      0,
-      Math.PI * 2,
-    );
+    ctx.arc(this.pointerX, this.pointerY, stats.range, 0, Math.PI * 2);
     ctx.stroke();
 
     ctx.restore();
@@ -3117,7 +3040,12 @@ export class GameEngine {
 
       if (enemy.type === "runner") {
         ctx.rotate(Math.PI / 4);
-        ctx.fillRect(-enemy.radius * 0.72, -enemy.radius * 0.72, enemy.radius * 1.44, enemy.radius * 1.44);
+        ctx.fillRect(
+          -enemy.radius * 0.72,
+          -enemy.radius * 0.72,
+          enemy.radius * 1.44,
+          enemy.radius * 1.44,
+        );
       } else if (enemy.type === "tank") {
         ctx.beginPath();
         ctx.arc(0, 0, enemy.radius, 0, Math.PI * 2);
@@ -3128,7 +3056,7 @@ export class GameEngine {
       } else if (enemy.type === "armored") {
         ctx.beginPath();
         for (let p = 0; p < 6; p += 1) {
-          const angle = -Math.PI / 2 + p * Math.PI / 3;
+          const angle = -Math.PI / 2 + (p * Math.PI) / 3;
           const px = Math.cos(angle) * enemy.radius;
           const py = Math.sin(angle) * enemy.radius;
           if (p === 0) ctx.moveTo(px, py);
@@ -3155,12 +3083,7 @@ export class GameEngine {
       ctx.fillRect(barX, barY, barWidth, 3);
 
       ctx.fillStyle = enemy.type === "armored" ? "#ffd45f" : "#72f0a4";
-      ctx.fillRect(
-        barX,
-        barY,
-        barWidth * clamp(enemy.hp / enemy.maxHp, 0, 1),
-        3,
-      );
+      ctx.fillRect(barX, barY, barWidth * clamp(enemy.hp / enemy.maxHp, 0, 1), 3);
     }
   }
 
@@ -3177,12 +3100,7 @@ export class GameEngine {
     for (let i = 0; i < this.towers.length; i += 1) {
       const tower = this.towers[i];
 
-      if (
-        tower.x < -24 ||
-        tower.x > MAP.width + 24 ||
-        tower.y < -24 ||
-        tower.y > MAP.height + 24
-      ) {
+      if (tower.x < -24 || tower.x > MAP.width + 24 || tower.y < -24 || tower.y > MAP.height + 24) {
         continue;
       }
 
@@ -3198,12 +3116,7 @@ export class GameEngine {
     for (let i = 0; i < this.towers.length; i += 1) {
       const tower = this.towers[i];
 
-      if (
-        tower.x < -24 ||
-        tower.x > MAP.width + 24 ||
-        tower.y < -24 ||
-        tower.y > MAP.height + 24
-      ) {
+      if (tower.x < -24 || tower.x > MAP.width + 24 || tower.y < -24 || tower.y > MAP.height + 24) {
         continue;
       }
 
@@ -3241,12 +3154,7 @@ export class GameEngine {
         }
 
         const size = Math.max(1.5, Math.min(3.5, projectile.radius));
-        ctx.rect(
-          projectile.x - size * 0.5,
-          projectile.y - size * 0.5,
-          size,
-          size,
-        );
+        ctx.rect(projectile.x - size * 0.5, projectile.y - size * 0.5, size, size);
       }
 
       ctx.fill();
@@ -3269,7 +3177,13 @@ export class GameEngine {
     ctx.beginPath();
     for (let i = 0; i < this.enemies.length; i += stride) {
       const enemy = this.enemies[i];
-      if (enemy.type !== "basic" || enemy.x < -12 || enemy.x > MAP.width + 12 || enemy.y < -12 || enemy.y > MAP.height + 12) {
+      if (
+        enemy.type !== "basic" ||
+        enemy.x < -12 ||
+        enemy.x > MAP.width + 12 ||
+        enemy.y < -12 ||
+        enemy.y > MAP.height + 12
+      ) {
         continue;
       }
       const r = 4.5;
@@ -3282,7 +3196,13 @@ export class GameEngine {
     ctx.beginPath();
     for (let i = 0; i < this.enemies.length; i += stride) {
       const enemy = this.enemies[i];
-      if (enemy.type !== "runner" || enemy.x < -12 || enemy.x > MAP.width + 12 || enemy.y < -12 || enemy.y > MAP.height + 12) {
+      if (
+        enemy.type !== "runner" ||
+        enemy.x < -12 ||
+        enemy.x > MAP.width + 12 ||
+        enemy.y < -12 ||
+        enemy.y > MAP.height + 12
+      ) {
         continue;
       }
       const r = 4;
@@ -3298,7 +3218,13 @@ export class GameEngine {
     ctx.beginPath();
     for (let i = 0; i < this.enemies.length; i += stride) {
       const enemy = this.enemies[i];
-      if (enemy.type !== "tank" || enemy.x < -12 || enemy.x > MAP.width + 12 || enemy.y < -12 || enemy.y > MAP.height + 12) {
+      if (
+        enemy.type !== "tank" ||
+        enemy.x < -12 ||
+        enemy.x > MAP.width + 12 ||
+        enemy.y < -12 ||
+        enemy.y > MAP.height + 12
+      ) {
         continue;
       }
       const r = 5.5;
@@ -3312,7 +3238,13 @@ export class GameEngine {
     ctx.beginPath();
     for (let i = 0; i < this.enemies.length; i += stride) {
       const enemy = this.enemies[i];
-      if (enemy.type !== "armored" || enemy.x < -12 || enemy.x > MAP.width + 12 || enemy.y < -12 || enemy.y > MAP.height + 12) {
+      if (
+        enemy.type !== "armored" ||
+        enemy.x < -12 ||
+        enemy.x > MAP.width + 12 ||
+        enemy.y < -12 ||
+        enemy.y > MAP.height + 12
+      ) {
         continue;
       }
       const r = 4.75;
