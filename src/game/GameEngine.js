@@ -25,7 +25,7 @@ const ENEMY_VIEW_MARGIN = 32;
 const BENCHMARK_WARMUP_SECONDS = 3;
 
 // How long the benchmark actually measures performance.
-const BENCHMARK_DURATION_SECONDS = 30;
+const BENCHMARK_DURATION_SECONDS = 20;
 
 // We consider a frame to meet the assignment's
 // 45 FPS requirement when it is <= 22.22ms.
@@ -37,15 +37,15 @@ const BAD_FRAME_MS = 33;
 
 // The performance lab uses short, repeatable A/B runs so the
 // optimization story can be demonstrated live in the browser.
-const EXPERIMENT_WARMUP_SECONDS = 0.75;
-const EXPERIMENT_DURATION_SECONDS = 2.5;
-const BASELINE_DURATION_SECONDS = 4;
 
 const STRESS_COUNTS = {
   enemies: 5000,
   towers: 100,
   projectiles: 1000,
 };
+
+const STRESS_TOWER_TYPES = ["blaster", "cannon", "sniper"];
+const TOWER_LEVEL_LABELS = ["L1", "L2", "L3"];
 
 const PERFORMANCE_EXPERIMENTS = {
   spatialGrid: {
@@ -175,7 +175,6 @@ export class GameEngine {
     // The shipped game defaults to the optimized path.
     this.performanceOptions = {
       spatialGrid: true,
-      staticCanvas: false,
       allocationFreeProjectiles: true,
       stressSimpleRendering: false,
     };
@@ -187,19 +186,23 @@ export class GameEngine {
       before: null,
       after: null,
     };
+    this.experimentToken = 0;
 
     // Stress-mode projectile slots. The first 100 projectiles are
     // visually attached to the 100 stress towers so the benchmark
     // still looks like a tower-defense scene while keeping the
     // projectile count fixed at exactly 1,000.
     this.stressProjectileByTower = new Map();
+    this.stressTowersByType = { blaster: [], cannon: [], sniper: [] };
+    this.stressProjectilesByType = { blaster: [], cannon: [], sniper: [] };
 
-    // Static scenery never changes during gameplay, so it can be
-    // rendered once and reused every frame.
-    this.staticCanvas = document.createElement("canvas");
-    this.staticCanvas.width = MAP.width;
-    this.staticCanvas.height = MAP.height;
-    this.staticCtx = this.staticCanvas.getContext("2d", { alpha: false });
+    // Tower platforms, rings, cores, and level badges are static during a
+    // stress run. Cache them once and redraw only the moving barrels per frame.
+    this.stressTowerCanvas = document.createElement("canvas");
+    this.stressTowerCanvas.width = MAP.width;
+    this.stressTowerCanvas.height = MAP.height;
+    this.stressTowerCtx = this.stressTowerCanvas.getContext("2d");
+    this.stressTowerLayerReady = false;
 
     // Current pointer position in game coordinates.
     this.pointerX = 0;
@@ -211,6 +214,13 @@ export class GameEngine {
     // --------------------------------------------------------
 
     this.path = PATH;
+    this.pathSegments = this.path.slice(0, -1).map((point, index) => {
+      const next = this.path[index + 1];
+      const dx = next.x - point.x;
+      const dy = next.y - point.y;
+      const length = Math.hypot(dx, dy) || 1;
+      return { unitX: dx / length, unitY: dy / length };
+    });
 
     // --------------------------------------------------------
     // ENTITY ARRAYS
@@ -266,8 +276,23 @@ export class GameEngine {
     this.pointerMoveHandler = this.handlePointerMove.bind(this);
     this.pointerLeaveHandler = this.handlePointerLeave.bind(this);
     this.keyHandler = this.handleKeyDown.bind(this);
+    this.visibilityHandler = this.handleDocumentVisibilityChange.bind(this);
+    this.canvasVisibilityRatio = 0;
+    this.visibilityObserver = null;
 
-    this.rebuildStaticLayer();
+    if (typeof IntersectionObserver !== "undefined") {
+      this.visibilityObserver = new IntersectionObserver(
+        (entries) => {
+          for (let i = 0; i < entries.length; i += 1) {
+            if (entries[i].target === this.canvas) {
+              this.canvasVisibilityRatio = entries[i].intersectionRatio;
+            }
+          }
+        },
+        { threshold: [0, 0.25, 0.5, 0.72, 1] },
+      );
+      this.visibilityObserver.observe(this.canvas);
+    }
 
     // --------------------------------------------------------
     // INPUT
@@ -277,6 +302,188 @@ export class GameEngine {
     canvas.addEventListener("pointermove", this.pointerMoveHandler);
     canvas.addEventListener("pointerleave", this.pointerLeaveHandler);
     window.addEventListener("keydown", this.keyHandler);
+    document.addEventListener("visibilitychange", this.visibilityHandler);
+    window.addEventListener("blur", this.visibilityHandler);
+    window.addEventListener("focus", this.visibilityHandler);
+  }
+
+  // ==========================================================
+  // BENCHMARK VIEWPORT GUARD
+  // ==========================================================
+
+  handleDocumentVisibilityChange() {
+    if (
+      this.benchmark?.active &&
+      (document.visibilityState !== "visible" || !document.hasFocus())
+    ) {
+      this.benchmark.visibilityPaused = true;
+      this.state.benchmark = {
+        ...this.state.benchmark,
+        visibilityPaused: true,
+      };
+      this.emitSnapshot(true);
+    }
+  }
+
+  getCanvasVisibleRatio() {
+    if (document.visibilityState !== "visible" || !document.hasFocus()) {
+      return 0;
+    }
+
+    const rect = this.canvas.getBoundingClientRect();
+
+    if (rect.width <= 0 || rect.height <= 0) {
+      return 0;
+    }
+
+    const visibleWidth = Math.max(
+      0,
+      Math.min(rect.right, window.innerWidth) - Math.max(rect.left, 0),
+    );
+    const visibleHeight = Math.max(
+      0,
+      Math.min(rect.bottom, window.innerHeight) - Math.max(rect.top, 0),
+    );
+
+    const ratio = (visibleWidth * visibleHeight) / (rect.width * rect.height);
+    this.canvasVisibilityRatio = ratio;
+    return ratio;
+  }
+
+  scrollCanvasIntoView() {
+    const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+
+    this.canvas.scrollIntoView({
+      behavior: reducedMotion ? "auto" : "smooth",
+      block: "center",
+      inline: "nearest",
+    });
+
+    return new Promise((resolve) => {
+      const startedAt = performance.now();
+      let previousTop = null;
+      let stableFrames = 0;
+
+      const checkPosition = () => {
+        if (!this.running) {
+          resolve(false);
+          return;
+        }
+
+        const rect = this.canvas.getBoundingClientRect();
+        const visibleRatio = this.getCanvasVisibleRatio();
+
+        if (previousTop !== null && Math.abs(rect.top - previousTop) < 0.75) {
+          stableFrames += 1;
+        } else {
+          stableFrames = 0;
+        }
+
+        previousTop = rect.top;
+
+        if (visibleRatio >= 0.72 && stableFrames >= 4) {
+          resolve(true);
+          return;
+        }
+
+        if (performance.now() - startedAt >= 3500) {
+          resolve(visibleRatio >= 0.72);
+          return;
+        }
+
+        requestAnimationFrame(checkPosition);
+      };
+
+      requestAnimationFrame(checkPosition);
+    });
+  }
+
+  resetBenchmarkMeasurementForWarmup() {
+    this.benchmark.phase = "warmup";
+    this.benchmark.warmupElapsed = 0;
+    this.benchmark.measuredElapsed = 0;
+    this.benchmark.totalFrames = 0;
+    this.benchmark.goodFrames = 0;
+    this.benchmark.badFrames = 0;
+    this.benchmark.totalFrameTime = 0;
+    this.benchmark.totalCpuFrameTime = 0;
+    this.benchmark.averageFrameMs = 0;
+    this.benchmark.averageCpuFrameMs = 0;
+    this.benchmark.worstFrameMs = 0;
+    this.benchmark.worstCpuFrameMs = 0;
+    this.benchmark.pass45FpsPercent = 0;
+    this.benchmark.over33msPercent = 0;
+    this.benchmark.visibilityPaused = false;
+    this.frameSamples = [];
+    this.accumulator = 0;
+    this.lastTime = performance.now();
+
+    this.state.benchmark = {
+      ...this.state.benchmark,
+      phase: "warmup",
+      warmupElapsed: 0,
+      measuredElapsed: 0,
+      totalFrames: 0,
+      goodFrames: 0,
+      badFrames: 0,
+      averageFrameMs: 0,
+      averageCpuFrameMs: 0,
+      worstFrameMs: 0,
+      worstCpuFrameMs: 0,
+      pass45FpsPercent: 0,
+      over33msPercent: 0,
+      visibilityPaused: false,
+    };
+
+    this.emitSnapshot(true);
+  }
+
+  async prepareBenchmarkStart(kind, experimentId = null) {
+    if (this.benchmark.active || this.experiment.active || this.state?.benchmark?.active) {
+      return false;
+    }
+
+    this.benchmark = {
+      ...this.createEmptyBenchmarkState(),
+      active: true,
+      kind,
+      experimentId,
+      phase: "positioning",
+    };
+
+    this.state.benchmark = {
+      ...this.benchmark,
+      visibilityPaused: false,
+      setupError: "",
+    };
+
+    this.emitSnapshot(true);
+
+    const canvasReady = await this.scrollCanvasIntoView();
+
+    if (!this.running) {
+      return false;
+    }
+
+    if (!canvasReady) {
+      this.benchmark.active = false;
+      this.benchmark.phase = "idle";
+      this.state.benchmark = {
+        ...this.state.benchmark,
+        active: false,
+        phase: "idle",
+        setupError: "Could not bring the battlefield into view. Scroll to the game and try again.",
+      };
+      this.emitSnapshot(true);
+      return false;
+    }
+
+    this.speedMultiplier = 1;
+    this.state.paused = false;
+    this.accumulator = 0;
+    this.lastTime = performance.now();
+
+    return true;
   }
 
   // ==========================================================
@@ -403,6 +610,8 @@ export class GameEngine {
         worstFrameMs: 0,
         pass45FpsPercent: 0,
         over33msPercent: 0,
+        visibilityPaused: false,
+        setupError: "",
         complete: false,
       },
     };
@@ -430,11 +639,17 @@ export class GameEngine {
 
   destroy() {
     this.running = false;
+    this.experimentToken += 1;
+    this.experiment.active = false;
 
     this.canvas.removeEventListener("pointerdown", this.pointerHandler);
     this.canvas.removeEventListener("pointermove", this.pointerMoveHandler);
     this.canvas.removeEventListener("pointerleave", this.pointerLeaveHandler);
     window.removeEventListener("keydown", this.keyHandler);
+    document.removeEventListener("visibilitychange", this.visibilityHandler);
+    window.removeEventListener("blur", this.visibilityHandler);
+    window.removeEventListener("focus", this.visibilityHandler);
+    this.visibilityObserver?.disconnect();
   }
 
   // ==========================================================
@@ -442,6 +657,15 @@ export class GameEngine {
   // ==========================================================
 
   resetGame() {
+    this.experimentToken += 1;
+    this.experiment = {
+      active: false,
+      id: null,
+      stage: "idle",
+      before: null,
+      after: null,
+    };
+    this.benchmark = this.createEmptyBenchmarkState();
     this.clearEntities();
 
     this.state = this.createInitialState();
@@ -454,7 +678,6 @@ export class GameEngine {
 
     this.performanceOptions = {
       spatialGrid: true,
-      staticCanvas: false,
       allocationFreeProjectiles: true,
       stressSimpleRendering: false,
     };
@@ -531,6 +754,10 @@ export class GameEngine {
     this.enemiesById.clear();
 
     this.towersById.clear();
+
+    this.stressProjectileByTower.clear();
+    this.stressTowersByType = { blaster: [], cannon: [], sniper: [] };
+    this.stressProjectilesByType = { blaster: [], cannon: [], sniper: [] };
   }
 
   // ==========================================================
@@ -618,7 +845,13 @@ export class GameEngine {
 
     const renderStart = performance.now();
 
-    this.render();
+    // Evidence experiments measure isolated CPU operations while the game
+    // is paused and the Performance Lab is already in view. Skip Canvas
+    // drawing during this short window so rendering cannot contaminate the
+    // operation comparison or create hidden background work.
+    if (!this.experiment.active) {
+      this.render();
+    }
 
     const renderFrameMs = performance.now() - renderStart;
 
@@ -646,14 +879,19 @@ export class GameEngine {
     // ROLLING FPS
     // --------------------------------------------------------
 
-    this.updateRollingFps(browserFrameMs);
+    if (!this.benchmark.active && !this.experiment.active) {
+      this.updateRollingFps(browserFrameMs);
+    }
 
     // --------------------------------------------------------
     // BENCHMARK
     // --------------------------------------------------------
 
     if (this.benchmark.active) {
-      this.updateBenchmark(rawDelta, browserFrameMs);
+      // Benchmark duration follows real elapsed browser time. The simulation
+      // still uses the capped rawDelta above to protect the fixed-step loop
+      // from giant catch-up updates after a stall.
+      this.updateBenchmark(rawFrameDelta, browserFrameMs);
     }
 
     // --------------------------------------------------------
@@ -662,7 +900,9 @@ export class GameEngine {
 
     this.uiTimer += rawDelta;
 
-    if (this.uiTimer >= 0.1) {
+    const snapshotInterval = this.benchmark.active || this.experiment.active ? 1 : 0.1;
+
+    if (this.uiTimer >= snapshotInterval) {
       this.emitSnapshot();
 
       this.uiTimer = 0;
@@ -721,6 +961,16 @@ export class GameEngine {
 
   update(dt) {
     if (this.state.paused || this.state.victory || this.state.gameOver) {
+      return;
+    }
+
+    // The stress harness has no wave spawning, player damage, notifications,
+    // or gameplay effects. Keep its fixed-step path focused on the 5k/100/1k
+    // simulation and avoid per-system profiler calls during measurement.
+    if (this.state.stressMode) {
+      this.updateEnemies(dt);
+      this.updateTowers(dt);
+      this.updateProjectiles(dt);
       return;
     }
 
@@ -991,26 +1241,20 @@ export class GameEngine {
       // ------------------------------------------------------
 
       const dx = target.x - enemy.x;
-
       const dy = target.y - enemy.y;
-
       const step = enemy.speed * dt;
 
-      const d = Math.hypot(dx, dy);
-
-      if (d <= step) {
+      // Enemies always move along a known path segment. Comparing squared
+      // distance avoids one Math.hypot()/division pair per enemy per update.
+      if (dx * dx + dy * dy <= step * step) {
         enemy.x = target.x;
-
         enemy.y = target.y;
-
         enemy.pathIndex += 1;
-
         enemy.progress = enemy.pathIndex / (this.path.length - 1);
       } else {
-        enemy.x += (dx / d) * step;
-
-        enemy.y += (dy / d) * step;
-
+        const segment = this.pathSegments[enemy.pathIndex];
+        enemy.x += segment.unitX * step;
+        enemy.y += segment.unitY * step;
         enemy.progress = enemy.pathIndex / (this.path.length - 1) + 0.01;
       }
 
@@ -1052,6 +1296,7 @@ export class GameEngine {
 
       // Keep it alive in the active array.
       this.enemies[index] = enemy;
+      this.grid.insert(enemy);
 
       return;
     }
@@ -1178,6 +1423,38 @@ export class GameEngine {
   updateTowers(dt) {
     for (let i = 0; i < this.towers.length; i += 1) {
       const tower = this.towers[i];
+      const stats = this.getTowerStats(tower);
+      const rangeSq = stats.range * stats.range;
+
+      // A target is not a permanent lock. Enemies move every simulation
+      // step, so validate the current target before cooldown handling. This
+      // prevents the barrel and targeting beam from following an enemy that
+      // has already moved outside the tower's attack radius.
+      let currentTarget = tower.targetRef;
+
+      if ((!currentTarget || !currentTarget.active) && tower.targetId) {
+        currentTarget = this.findEnemyById(tower.targetId);
+      }
+
+      if (currentTarget && currentTarget.active && currentTarget.hp > 0) {
+        const dx = currentTarget.x - tower.x;
+        const dy = currentTarget.y - tower.y;
+
+        if (dx * dx + dy * dy <= rangeSq) {
+          tower.targetId = currentTarget.id;
+          tower.targetRef = currentTarget;
+
+          const aimLength = Math.sqrt(dx * dx + dy * dy) || 1;
+          tower.aimUnitX = dx / aimLength;
+          tower.aimUnitY = dy / aimLength;
+        } else {
+          tower.targetId = 0;
+          tower.targetRef = null;
+        }
+      } else {
+        tower.targetId = 0;
+        tower.targetRef = null;
+      }
 
       tower.cooldown -= dt;
 
@@ -1188,12 +1465,21 @@ export class GameEngine {
       const target = this.acquireTarget(tower);
 
       if (!target) {
+        tower.targetId = 0;
+        tower.targetRef = null;
         continue;
       }
 
-      const stats = this.getTowerStats(tower);
-
       tower.targetId = target.id;
+      tower.targetRef = target;
+
+      // Cache a unit aim vector. Stress rendering uses this instead of
+      // performing a Map lookup and Math.hypot for every tower on every paint.
+      const aimDx = target.x - tower.x;
+      const aimDy = target.y - tower.y;
+      const aimLength = Math.sqrt(aimDx * aimDx + aimDy * aimDy) || 1;
+      tower.aimUnitX = aimDx / aimLength;
+      tower.aimUnitY = aimDy / aimLength;
 
       // In stress mode each tower owns one projectile slot.
       // Re-launching that slot gives a visible shot from the tower
@@ -1205,7 +1491,9 @@ export class GameEngine {
           projectile.x = tower.x;
           projectile.y = tower.y;
           projectile.targetId = target.id;
+          projectile.targetRef = target;
           projectile.towerId = tower.id;
+          projectile.ownerRef = tower;
           projectile.type = tower.type;
           projectile.speed = stats.projectileSpeed;
           projectile.damage = stats.damage;
@@ -1220,7 +1508,6 @@ export class GameEngine {
       }
 
       this.fireProjectile(tower, target, stats);
-
       tower.cooldown = stats.fireRate;
     }
   }
@@ -1250,8 +1537,10 @@ export class GameEngine {
     projectile.radius = stats.projectileRadius;
 
     projectile.targetId = target.id;
+    projectile.targetRef = target;
 
     projectile.towerId = tower.id;
+    projectile.ownerRef = tower;
 
     projectile.splashRadius = stats.splashRadius;
 
@@ -1282,20 +1571,27 @@ export class GameEngine {
 
       projectile.lifetime -= dt;
 
-      let target = this.findEnemyById(projectile.targetId);
+      const stressMode = this.state.stressMode;
+      const owner = stressMode
+        ? projectile.ownerRef ||
+          (projectile.towerId ? this.towersById.get(projectile.towerId) : null)
+        : null;
+      let target =
+        stressMode && projectile.targetRef?.active
+          ? projectile.targetRef
+          : this.findEnemyById(projectile.targetId);
 
       // ------------------------------------------------------
       // STRESS RECYCLE
       // ------------------------------------------------------
 
-      if (this.state.stressMode) {
-        const owner = projectile.towerId ? this.towersById.get(projectile.towerId) : null;
-
+      if (stressMode) {
         if (!target) {
           target = owner?.targetId
             ? this.findEnemyById(owner.targetId)
             : this.enemies[i % this.enemies.length];
           projectile.targetId = target?.id ?? 0;
+          projectile.targetRef = target;
         }
 
         if (projectile.lifetime <= 0) {
@@ -1329,9 +1625,7 @@ export class GameEngine {
       // HIT / STRESS RECYCLE
       // ------------------------------------------------------
 
-      if (this.state.stressMode) {
-        const owner = projectile.towerId ? this.towersById.get(projectile.towerId) : null;
-
+      if (stressMode) {
         if (
           distanceToTarget <= step + target.radius + projectile.radius ||
           projectile.lifetime <= 0
@@ -1341,6 +1635,9 @@ export class GameEngine {
             projectile.x = owner.x;
             projectile.y = owner.y;
             projectile.targetId = owner.targetId || target.id;
+            if (owner.targetId && owner.targetId !== target.id) {
+              projectile.targetRef = this.findEnemyById(owner.targetId) || target;
+            }
           } else {
             projectile.x = target.x - 20;
             projectile.y = target.y - 20;
@@ -1385,7 +1682,11 @@ export class GameEngine {
       }
     }
 
-    this.cleanupDeadEnemies();
+    // Stress projectiles recycle without dealing damage, so scanning all
+    // 5,000 enemies for dead entities every fixed update is unnecessary.
+    if (!this.state.stressMode) {
+      this.cleanupDeadEnemies();
+    }
   }
 
   // ==========================================================
@@ -1986,6 +2287,7 @@ export class GameEngine {
 
       this.towers.push(tower);
       this.towersById.set(tower.id, tower);
+      this.stressTowersByType[tower.type].push(tower);
     }
 
     // --------------------------------------------------------
@@ -2026,7 +2328,9 @@ export class GameEngine {
       const target = this.enemies[(i * 37) % this.enemies.length];
 
       projectile.targetId = target.id;
+      projectile.targetRef = target;
       projectile.towerId = tower.id;
+      projectile.ownerRef = tower;
       projectile.type = tower.type;
       projectile.speed = 400;
       projectile.damage = 15;
@@ -2044,6 +2348,7 @@ export class GameEngine {
       projectile.y = tower.y + dy * phase;
 
       this.projectiles.push(projectile);
+      this.stressProjectilesByType[projectile.type].push(projectile);
 
       if (i < this.towers.length) {
         this.stressProjectileByTower.set(tower.id, projectile);
@@ -2054,7 +2359,16 @@ export class GameEngine {
       const tower = this.towers[i];
       const target = this.enemies[(i * 37) % this.enemies.length];
       tower.targetId = target?.id ?? 0;
+      tower.targetRef = target || null;
+
+      const dx = (target?.x ?? tower.x + 1) - tower.x;
+      const dy = (target?.y ?? tower.y) - tower.y;
+      const length = Math.sqrt(dx * dx + dy * dy) || 1;
+      tower.aimUnitX = dx / length;
+      tower.aimUnitY = dy / length;
     }
+
+    this.rebuildStressTowerLayer();
 
     this.state.enemiesAlive = this.enemies.length;
     this.state.towerCount = this.towers.length;
@@ -2067,11 +2381,11 @@ export class GameEngine {
 
   createEmptyBenchmarkState() {
     return {
-      active: true,
+      active: false,
       kind: "final",
       experimentId: null,
       experimentStage: "idle",
-      phase: "warmup",
+      phase: "idle",
       warmupElapsed: 0,
       measuredElapsed: 0,
       totalFrames: 0,
@@ -2085,6 +2399,8 @@ export class GameEngine {
       worstCpuFrameMs: 0,
       pass45FpsPercent: 0,
       over33msPercent: 0,
+      visibilityPaused: false,
+      setupError: "",
       complete: false,
       workload: { ...STRESS_COUNTS },
       before: null,
@@ -2095,9 +2411,11 @@ export class GameEngine {
   resetBenchmarkCounters(kind = "final", experimentId = null, experimentStage = "idle") {
     this.benchmark = {
       ...this.createEmptyBenchmarkState(),
+      active: true,
       kind,
       experimentId,
       experimentStage,
+      phase: "warmup",
     };
 
     this.state.benchmark = {
@@ -2108,51 +2426,18 @@ export class GameEngine {
   }
 
   // ==========================================================
-  // INITIAL-STYLE BASELINE
+  // FINAL 20-SECOND STRESS TEST
   // ==========================================================
 
-  runStressBaseline() {
-    this.performanceOptions = {
-      spatialGrid: false,
-      staticCanvas: false,
-      allocationFreeProjectiles: false,
-      stressSimpleRendering: true,
-    };
+  async runStressTest() {
+    const ready = await this.prepareBenchmarkStart("final");
 
-    this.experiment = {
-      active: false,
-      id: null,
-      stage: "baseline",
-      before: null,
-      after: null,
-    };
+    if (!ready) {
+      return;
+    }
 
-    this.speedMultiplier = 1;
-    this.state.paused = false;
-    this.accumulator = 0;
-    this.lastTime = performance.now();
-
-    this.prepareStressWorld();
-    this.resetBenchmarkCounters("baseline");
-
-    this.state.benchmark = {
-      ...this.state.benchmark,
-      active: true,
-      phase: "warmup",
-      kind: "baseline",
-    };
-
-    this.emitSnapshot(true);
-  }
-
-  // ==========================================================
-  // FINAL STRESS TEST
-  // ==========================================================
-
-  runStressTest() {
     this.performanceOptions = {
       spatialGrid: true,
-      staticCanvas: false,
       allocationFreeProjectiles: true,
       stressSimpleRendering: true,
     };
@@ -2165,20 +2450,9 @@ export class GameEngine {
       after: null,
     };
 
-    this.speedMultiplier = 1;
-    this.state.paused = false;
-    this.accumulator = 0;
-    this.lastTime = performance.now();
-
     this.prepareStressWorld();
     this.resetBenchmarkCounters("final");
-
-    this.state.benchmark = {
-      ...this.state.benchmark,
-      active: true,
-      phase: "warmup",
-    };
-
+    this.lastTime = performance.now();
     this.emitSnapshot(true);
   }
 
@@ -2186,122 +2460,180 @@ export class GameEngine {
   // PERFORMANCE EXPERIMENT
   // ==========================================================
 
-  runPerformanceExperiment(experimentId) {
-    const experiment = PERFORMANCE_EXPERIMENTS[experimentId];
+  async runPerformanceExperiment(experimentId) {
+    const experimentConfig = PERFORMANCE_EXPERIMENTS[experimentId];
 
-    if (!experiment || this.benchmark.active) {
+    if (
+      !experimentConfig ||
+      this.benchmark.active ||
+      this.experiment.active ||
+      this.state?.benchmark?.active
+    ) {
       return;
     }
 
-    this.speedMultiplier = 1;
-    this.state.paused = false;
-    this.accumulator = 0;
-    this.lastTime = performance.now();
-
-    // Load the exact assignment stress workload first. The A/B measurement
-    // then runs as a short isolated CPU test while this world remains visible.
-    this.prepareStressWorld();
-
-    this.performanceOptions = {
-      spatialGrid: true,
-      staticCanvas: false,
-      allocationFreeProjectiles: true,
-      stressSimpleRendering: true,
-    };
+    // Evidence experiments are isolated CPU microbenchmarks. Unlike the
+    // final FPS test, they do not need the Canvas in view, so they must not
+    // scroll the page away from the Performance Lab and back again.
+    const token = ++this.experimentToken;
+    const isCurrentRun = () =>
+      this.running && this.experiment.active && this.experimentToken === token;
+    const wait = (milliseconds) =>
+      new Promise((resolve) => window.setTimeout(resolve, milliseconds));
 
     this.experiment = {
       active: true,
       id: experimentId,
-      stage: "before",
+      stage: "preparing",
       before: null,
       after: null,
     };
 
-    this.state.benchmark = {
+    this.speedMultiplier = 1;
+    this.accumulator = 0;
+    this.lastTime = performance.now();
+    this.performanceOptions = {
+      spatialGrid: true,
+      allocationFreeProjectiles: true,
+      stressSimpleRendering: true,
+    };
+
+    const initialBenchmark = {
       ...this.createEmptyBenchmarkState(),
       active: true,
       kind: "experiment",
       experimentId,
-      experimentStage: "before",
-      phase: "measuring",
+      experimentStage: "preparing",
+      phase: "preparing",
       workload: { ...STRESS_COUNTS },
     };
-
+    this.state.benchmark = initialBenchmark;
     this.emitSnapshot(true);
 
-    // Give the browser one frame to paint the loaded stress scene before
-    // beginning the synchronous measurement.
-    requestAnimationFrame(() => {
+    try {
+      // Build the same representative workload for both sides. This setup
+      // is outside the timed sections and does not move the browser viewport.
+      this.prepareStressWorld();
+      this.state.paused = true;
+      this.experiment.stage = "before";
+      this.state.benchmark = {
+        ...this.state.benchmark,
+        phase: "measuring",
+        experimentStage: "before",
+      };
+      this.emitSnapshot(true);
+
+      // Keep each stage visible long enough to understand what is running.
+      // This delay is outside performance.now() measurement windows.
+      await wait(650);
+      if (!isCurrentRun()) return;
+
       const before = this.measureExperiment(experimentId, false);
-
       this.experiment.before = before;
-
+      this.experiment.stage = "after";
       this.state.benchmark = {
         ...this.state.benchmark,
         before,
-        phase: "after",
+        phase: "measuring",
         experimentStage: "after",
       };
-
       this.emitSnapshot(true);
 
-      requestAnimationFrame(() => {
-        // Recreate the same stress world before the AFTER measurement so
-        // both runs start from equivalent entity positions and targets.
-        this.prepareStressWorld();
-        this.performanceOptions = {
-          spatialGrid: true,
-          staticCanvas: false,
-          allocationFreeProjectiles: true,
-          stressSimpleRendering: true,
-        };
+      await wait(650);
+      if (!isCurrentRun()) return;
 
-        const after = this.measureExperiment(experimentId, true);
+      // Rebuild the deterministic workload so the optimized side starts
+      // from the same entities, positions, and tower configuration.
+      this.prepareStressWorld();
+      this.state.paused = true;
+      this.performanceOptions = {
+        spatialGrid: true,
+        allocationFreeProjectiles: true,
+        stressSimpleRendering: true,
+      };
 
-        this.experiment.after = after;
-        this.experiment.stage = "complete";
-        this.experiment.active = false;
+      const after = this.measureExperiment(experimentId, true);
+      this.experiment.after = after;
+      this.experiment.stage = "complete";
+      this.experiment.active = false;
 
-        const completedBenchmark = {
-          ...this.state.benchmark,
-          active: false,
-          phase: "complete",
-          experimentStage: "complete",
-          before,
-          after,
-          complete: true,
-        };
+      const completedBenchmark = {
+        ...this.state.benchmark,
+        active: false,
+        phase: "complete",
+        experimentStage: "complete",
+        before,
+        after,
+        complete: true,
+        workload: { ...STRESS_COUNTS },
+      };
 
-        this.clearEntities();
-        this.stressProjectileByTower.clear();
+      // Clear the internal benchmark lock as well as the UI state. The old
+      // implementation only cleared state.benchmark.active, leaving this
+      // engine-level flag true and blocking every subsequent test.
+      this.benchmark = this.createEmptyBenchmarkState();
+      this.benchmark.active = false;
+      this.clearEntities();
+      this.stressProjectileByTower.clear();
+      this.state = {
+        ...this.createInitialState(),
+        benchmark: completedBenchmark,
+      };
+      this.performanceOptions = {
+        spatialGrid: true,
+        allocationFreeProjectiles: true,
+        stressSimpleRendering: false,
+      };
+      this.experiment = {
+        active: false,
+        id: null,
+        stage: "idle",
+        before: null,
+        after: null,
+      };
+      this.speedMultiplier = 1;
+      this.accumulator = 0;
+      this.lastTime = performance.now();
+      this.emitSnapshot(true);
+    } catch (error) {
+      if (!isCurrentRun()) return;
 
-        this.state = {
-          ...this.createInitialState(),
-          benchmark: completedBenchmark,
-        };
+      const failedBenchmark = {
+        ...this.state.benchmark,
+        active: false,
+        phase: "complete",
+        experimentStage: "error",
+        complete: true,
+        setupError:
+          error instanceof Error
+            ? `Optimization evidence failed: ${error.message}`
+            : "Optimization evidence failed unexpectedly.",
+      };
 
-        this.performanceOptions = {
-          spatialGrid: true,
-          staticCanvas: false,
-          allocationFreeProjectiles: true,
-          stressSimpleRendering: false,
-        };
-
-        this.experiment = {
-          active: false,
-          id: null,
-          stage: "idle",
-          before: null,
-          after: null,
-        };
-
-        this.speedMultiplier = 1;
-        this.accumulator = 0;
-        this.lastTime = performance.now();
-
-        this.emitSnapshot(true);
-      });
-    });
+      this.benchmark = this.createEmptyBenchmarkState();
+      this.clearEntities();
+      this.stressProjectileByTower.clear();
+      this.state = {
+        ...this.createInitialState(),
+        benchmark: failedBenchmark,
+      };
+      this.performanceOptions = {
+        spatialGrid: true,
+        allocationFreeProjectiles: true,
+        stressSimpleRendering: false,
+      };
+      this.experiment = {
+        active: false,
+        id: null,
+        stage: "idle",
+        before: null,
+        after: null,
+      };
+      this.speedMultiplier = 1;
+      this.accumulator = 0;
+      this.lastTime = performance.now();
+      this.emitSnapshot(true);
+    }
   }
 
   measureExperiment(experimentId, optimized) {
@@ -2427,16 +2759,34 @@ export class GameEngine {
       return;
     }
 
+    if (this.benchmark.phase === "positioning") {
+      return;
+    }
+
+    const visibleRatio = this.visibilityObserver
+      ? this.canvasVisibilityRatio
+      : this.getCanvasVisibleRatio();
+    const canvasVisible = visibleRatio >= 0.72;
+
+    if (!canvasVisible) {
+      this.benchmark.visibilityPaused = true;
+      this.state.benchmark = {
+        ...this.state.benchmark,
+        visibilityPaused: true,
+      };
+      return;
+    }
+
+    if (this.benchmark.visibilityPaused) {
+      this.resetBenchmarkMeasurementForWarmup();
+      return;
+    }
+
     if (this.benchmark.phase === "warmup") {
       this.benchmark.warmupElapsed += rawDelta;
       this.state.benchmark.warmupElapsed = this.benchmark.warmupElapsed;
 
-      if (
-        this.benchmark.warmupElapsed >=
-        (this.benchmark.kind === "experiment"
-          ? EXPERIMENT_WARMUP_SECONDS
-          : BENCHMARK_WARMUP_SECONDS)
-      ) {
+      if (this.benchmark.warmupElapsed >= BENCHMARK_WARMUP_SECONDS) {
         this.benchmark.phase = "measuring";
         this.benchmark.measuredElapsed = 0;
         this.benchmark.totalFrames = 0;
@@ -2509,12 +2859,7 @@ export class GameEngine {
       complete: false,
     };
 
-    const duration =
-      this.benchmark.kind === "experiment"
-        ? EXPERIMENT_DURATION_SECONDS
-        : this.benchmark.kind === "baseline"
-          ? BASELINE_DURATION_SECONDS
-          : BENCHMARK_DURATION_SECONDS;
+    const duration = BENCHMARK_DURATION_SECONDS;
 
     if (this.benchmark.measuredElapsed >= duration) {
       if (this.benchmark.kind === "experiment" && this.benchmark.experimentStage === "before") {
@@ -2569,7 +2914,6 @@ export class GameEngine {
     };
     this.performanceOptions = {
       spatialGrid: true,
-      staticCanvas: false,
       allocationFreeProjectiles: true,
       stressSimpleRendering: false,
     };
@@ -2596,7 +2940,7 @@ export class GameEngine {
       kind: this.benchmark.kind,
       phase: "complete",
       experimentId: null,
-      experimentStage: this.benchmark.kind === "baseline" ? "baseline" : "idle",
+      experimentStage: "idle",
       averageFrameMs: this.benchmark.averageFrameMs,
       averageCpuFrameMs: this.benchmark.averageCpuFrameMs,
       worstFrameMs: this.benchmark.worstFrameMs,
@@ -2618,7 +2962,6 @@ export class GameEngine {
     };
     this.performanceOptions = {
       spatialGrid: true,
-      staticCanvas: false,
       allocationFreeProjectiles: true,
       stressSimpleRendering: false,
     };
@@ -2637,38 +2980,26 @@ export class GameEngine {
   render() {
     const ctx = this.ctx;
 
-    ctx.clearRect(0, 0, MAP.width, MAP.height);
-
-    if (this.performanceOptions.staticCanvas) {
-      ctx.drawImage(this.staticCanvas, 0, 0);
-    } else {
-      this.renderBackground(ctx);
-      this.renderPath(ctx);
-    }
-
-    this.renderPlacementPreview(ctx);
-
-    this.renderTowers(ctx);
-
-    this.renderProjectiles(ctx);
-
-    this.renderEnemies(ctx);
-
-    this.renderNotification(ctx);
-
-    this.renderEffects(ctx);
-  }
-
-  // ==========================================================
-  // BUILD STATIC CANVAS LAYER
-  // ==========================================================
-
-  rebuildStaticLayer() {
-    const ctx = this.staticCtx;
-
-    ctx.clearRect(0, 0, MAP.width, MAP.height);
+    // renderBackground() fills the entire opaque canvas, so clearRect() would
+    // only add redundant pixel work before the background is painted again.
     this.renderBackground(ctx);
     this.renderPath(ctx);
+
+    const lightweightStress =
+      this.state.stressMode && this.performanceOptions.stressSimpleRendering;
+
+    if (!lightweightStress) {
+      this.renderPlacementPreview(ctx);
+    }
+
+    this.renderTowers(ctx);
+    this.renderProjectiles(ctx);
+    this.renderEnemies(ctx);
+
+    if (!lightweightStress) {
+      this.renderNotification(ctx);
+      this.renderEffects(ctx);
+    }
   }
 
   // ==========================================================
@@ -2692,25 +3023,19 @@ export class GameEngine {
 
     ctx.lineWidth = 1;
 
+    ctx.beginPath();
+
     for (let x = 0; x <= MAP.width; x += 40) {
-      ctx.beginPath();
-
       ctx.moveTo(x, 0);
-
       ctx.lineTo(x, MAP.height);
-
-      ctx.stroke();
     }
 
     for (let y = 0; y <= MAP.height; y += 40) {
-      ctx.beginPath();
-
       ctx.moveTo(0, y);
-
       ctx.lineTo(MAP.width, y);
-
-      ctx.stroke();
     }
+
+    ctx.stroke();
   }
 
   // ==========================================================
@@ -2872,6 +3197,11 @@ export class GameEngine {
   // ==========================================================
 
   renderTowers(ctx) {
+    if (this.state.stressMode && this.performanceOptions.stressSimpleRendering) {
+      this.renderStressTowers(ctx);
+      return;
+    }
+
     // Keep the exact same tower silhouettes used during normal gameplay,
     // including in the stress test. The benchmark still uses the
     // lightweight enemy/projectile renderers because those populations are
@@ -2881,7 +3211,18 @@ export class GameEngine {
       const data = TOWER_TYPES[tower.type];
       const stats = this.getTowerStats(tower);
       const selected = tower.id === this.selectedTowerId;
-      const target = tower.targetId ? this.findEnemyById(tower.targetId) : null;
+      const candidateTarget = tower.targetRef?.active
+        ? tower.targetRef
+        : tower.targetId
+          ? this.findEnemyById(tower.targetId)
+          : null;
+      const targetInRange =
+        candidateTarget &&
+        candidateTarget.active &&
+        candidateTarget.hp > 0 &&
+        distanceSq(tower.x, tower.y, candidateTarget.x, candidateTarget.y) <=
+          stats.range * stats.range;
+      const target = targetInRange ? candidateTarget : null;
 
       ctx.save();
 
@@ -2921,9 +3262,9 @@ export class GameEngine {
       ctx.stroke();
 
       // Directional barrel.
-      const aimX = target?.x ?? tower.x + 1;
-      const aimY = target?.y ?? tower.y;
-      const angle = Math.atan2(aimY - tower.y, aimX - tower.x);
+      // When no enemy is currently in range, retain the last valid aim
+      // direction rather than snapping the barrel toward an invalid target.
+      const angle = Math.atan2(tower.aimUnitY, tower.aimUnitX);
 
       ctx.save();
       ctx.translate(tower.x, tower.y);
@@ -2955,7 +3296,7 @@ export class GameEngine {
       ctx.font = "800 9px system-ui";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillText(`L${tower.level}`, tower.x, tower.y + 26.5);
+      ctx.fillText(TOWER_LEVEL_LABELS[tower.level - 1] || "L3", tower.x, tower.y + 26.5);
 
       ctx.restore();
     }
@@ -3092,57 +3433,119 @@ export class GameEngine {
   // ==========================================================
 
   renderStressTowers(ctx) {
-    // 100 towers are rendered with two batched paths. No per-frame
-    // Maps, Path2D objects, transforms, or text are allocated.
+    // Static tower bodies and labels are drawn once per stress setup.
+    // Only directional barrels change while enemies move.
+    if (this.stressTowerLayerReady) {
+      ctx.drawImage(this.stressTowerCanvas, 0, 0);
+    }
+
+    for (let typeIndex = 0; typeIndex < STRESS_TOWER_TYPES.length; typeIndex += 1) {
+      const type = STRESS_TOWER_TYPES[typeIndex];
+      const color = TOWER_TYPES[type].color;
+      const barrelLength = type === "sniper" ? 18 : type === "cannon" ? 16 : 13;
+      const halfWidth = type === "sniper" ? 2 : type === "cannon" ? 4 : 3;
+
+      ctx.fillStyle = color;
+      ctx.beginPath();
+
+      const towersOfType = this.stressTowersByType[type];
+      for (let i = 0; i < towersOfType.length; i += 1) {
+        const tower = towersOfType[i];
+
+        const ux = tower.aimUnitX;
+        const uy = tower.aimUnitY;
+        const px = -uy;
+        const py = ux;
+        const sx = tower.x + ux * 2;
+        const sy = tower.y + uy * 2;
+        const ex = tower.x + ux * barrelLength;
+        const ey = tower.y + uy * barrelLength;
+
+        ctx.moveTo(sx + px * halfWidth, sy + py * halfWidth);
+        ctx.lineTo(ex + px * halfWidth, ey + py * halfWidth);
+        ctx.lineTo(ex - px * halfWidth, ey - py * halfWidth);
+        ctx.lineTo(sx - px * halfWidth, sy - py * halfWidth);
+        ctx.closePath();
+      }
+
+      ctx.fill();
+    }
+  }
+
+  rebuildStressTowerLayer() {
+    const ctx = this.stressTowerCtx;
+    if (!ctx) return;
+
+    ctx.clearRect(0, 0, MAP.width, MAP.height);
+
+    // Dark tower platforms.
     ctx.fillStyle = "#0e1a2a";
     ctx.beginPath();
-
     for (let i = 0; i < this.towers.length; i += 1) {
       const tower = this.towers[i];
-
-      if (tower.x < -24 || tower.x > MAP.width + 24 || tower.y < -24 || tower.y > MAP.height + 24) {
-        continue;
-      }
-
-      ctx.moveTo(tower.x + 10, tower.y);
-      ctx.arc(tower.x, tower.y, 10, 0, Math.PI * 2);
+      ctx.moveTo(tower.x + 18, tower.y);
+      ctx.arc(tower.x, tower.y, 18, 0, Math.PI * 2);
     }
-
     ctx.fill();
 
-    ctx.fillStyle = "#65d7ff";
+    // Type-coloured rings and cores retain the original gameplay silhouettes.
+    for (let typeIndex = 0; typeIndex < STRESS_TOWER_TYPES.length; typeIndex += 1) {
+      const type = STRESS_TOWER_TYPES[typeIndex];
+      const color = TOWER_TYPES[type].color;
+
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      const towersOfType = this.stressTowersByType[type];
+      for (let i = 0; i < towersOfType.length; i += 1) {
+        const tower = towersOfType[i];
+        ctx.moveTo(tower.x + 18, tower.y);
+        ctx.arc(tower.x, tower.y, 18, 0, Math.PI * 2);
+      }
+      ctx.stroke();
+
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      for (let i = 0; i < towersOfType.length; i += 1) {
+        const tower = towersOfType[i];
+        ctx.moveTo(tower.x + 6, tower.y);
+        ctx.arc(tower.x, tower.y, 6, 0, Math.PI * 2);
+      }
+      ctx.fill();
+    }
+
+    // Level badges and text are static during the stress test.
+    ctx.fillStyle = "rgba(4, 10, 18, 0.9)";
     ctx.beginPath();
-
     for (let i = 0; i < this.towers.length; i += 1) {
       const tower = this.towers[i];
+      ctx.roundRect(tower.x - 12, tower.y + 20, 24, 13, 6);
+    }
+    ctx.fill();
 
-      if (tower.x < -24 || tower.x > MAP.width + 24 || tower.y < -24 || tower.y > MAP.height + 24) {
-        continue;
-      }
-
-      ctx.moveTo(tower.x + 5, tower.y);
-      ctx.arc(tower.x, tower.y, 5, 0, Math.PI * 2);
+    ctx.fillStyle = "#d9e3f1";
+    ctx.font = "800 9px system-ui";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    for (let i = 0; i < this.towers.length; i += 1) {
+      const tower = this.towers[i];
+      ctx.fillText(TOWER_LEVEL_LABELS[tower.level - 1] || "L3", tower.x, tower.y + 26.5);
     }
 
-    ctx.fill();
+    this.stressTowerLayerReady = true;
   }
 
   renderStressProjectiles(ctx) {
     // Use three batched paths, one per tower type. This keeps the exact
     // 1,000-projectile workload without allocating a Map/Path2D every frame.
-    const projectileTypes = ["blaster", "cannon", "sniper"];
-
-    for (let t = 0; t < projectileTypes.length; t += 1) {
-      const type = projectileTypes[t];
+    for (let t = 0; t < STRESS_TOWER_TYPES.length; t += 1) {
+      const type = STRESS_TOWER_TYPES[t];
+      const projectilesOfType = this.stressProjectilesByType[type];
       ctx.fillStyle = TOWER_TYPES[type].color;
       ctx.beginPath();
 
-      for (let i = 0; i < this.projectiles.length; i += 1) {
-        const projectile = this.projectiles[i];
-
-        if (projectile.type !== type) {
-          continue;
-        }
+      for (let i = 0; i < projectilesOfType.length; i += 1) {
+        const projectile = projectilesOfType[i];
 
         if (
           projectile.x < -8 ||
@@ -3162,103 +3565,52 @@ export class GameEngine {
   }
 
   renderStressEnemies(ctx) {
-    // Keep all 5,000 enemies active and simulated, but render a representative
-    // sample so individual silhouettes stay readable instead of collapsing
-    // into one continuous line. The full population still participates in
-    // movement, targeting, and collision logic.
+    // Render one representative in every eight active entities. Every enemy
+    // remains simulated and targetable; this keeps the stress scene visible
+    // without building four separate paths or scanning the sample four times.
     const stride = 8;
+    const padding = 12;
 
     ctx.fillStyle = "#ffffff";
     ctx.strokeStyle = "rgba(5, 12, 20, 0.9)";
     ctx.lineWidth = 1;
     ctx.globalAlpha = 0.96;
-
-    // Basic drones.
     ctx.beginPath();
+
     for (let i = 0; i < this.enemies.length; i += stride) {
       const enemy = this.enemies[i];
-      if (
-        enemy.type !== "basic" ||
-        enemy.x < -12 ||
-        enemy.x > MAP.width + 12 ||
-        enemy.y < -12 ||
-        enemy.y > MAP.height + 12
-      ) {
-        continue;
-      }
-      const r = 4.5;
-      ctx.moveTo(enemy.x + r, enemy.y);
-      ctx.arc(enemy.x, enemy.y, r, 0, Math.PI * 2);
-    }
-    ctx.fill();
+      const x = enemy.x;
+      const y = enemy.y;
 
-    // Runners use the same diamond silhouette as normal gameplay.
-    ctx.beginPath();
-    for (let i = 0; i < this.enemies.length; i += stride) {
-      const enemy = this.enemies[i];
-      if (
-        enemy.type !== "runner" ||
-        enemy.x < -12 ||
-        enemy.x > MAP.width + 12 ||
-        enemy.y < -12 ||
-        enemy.y > MAP.height + 12
-      ) {
+      if (x < -padding || x > MAP.width + padding || y < -padding || y > MAP.height + padding) {
         continue;
       }
-      const r = 4;
-      ctx.moveTo(enemy.x, enemy.y - r);
-      ctx.lineTo(enemy.x + r, enemy.y);
-      ctx.lineTo(enemy.x, enemy.y + r);
-      ctx.lineTo(enemy.x - r, enemy.y);
-      ctx.closePath();
-    }
-    ctx.fill();
 
-    // Tanks retain the large circular gameplay silhouette.
-    ctx.beginPath();
-    for (let i = 0; i < this.enemies.length; i += stride) {
-      const enemy = this.enemies[i];
-      if (
-        enemy.type !== "tank" ||
-        enemy.x < -12 ||
-        enemy.x > MAP.width + 12 ||
-        enemy.y < -12 ||
-        enemy.y > MAP.height + 12
-      ) {
-        continue;
+      if (enemy.type === "runner") {
+        const r = 4;
+        ctx.moveTo(x, y - r);
+        ctx.lineTo(x + r, y);
+        ctx.lineTo(x, y + r);
+        ctx.lineTo(x - r, y);
+        ctx.closePath();
+      } else if (enemy.type === "armored") {
+        const r = 4.75;
+        ctx.moveTo(x, y - r);
+        ctx.lineTo(x + r * 0.86, y - r * 0.5);
+        ctx.lineTo(x + r * 0.86, y + r * 0.5);
+        ctx.lineTo(x, y + r);
+        ctx.lineTo(x - r * 0.86, y + r * 0.5);
+        ctx.lineTo(x - r * 0.86, y - r * 0.5);
+        ctx.closePath();
+      } else {
+        const r = enemy.type === "tank" ? 5.5 : 4.5;
+        ctx.moveTo(x + r, y);
+        ctx.arc(x, y, r, 0, Math.PI * 2);
       }
-      const r = 5.5;
-      ctx.moveTo(enemy.x + r, enemy.y);
-      ctx.arc(enemy.x, enemy.y, r, 0, Math.PI * 2);
     }
+
     ctx.fill();
     ctx.stroke();
-
-    // Armored enemies retain the six-sided gameplay silhouette.
-    ctx.beginPath();
-    for (let i = 0; i < this.enemies.length; i += stride) {
-      const enemy = this.enemies[i];
-      if (
-        enemy.type !== "armored" ||
-        enemy.x < -12 ||
-        enemy.x > MAP.width + 12 ||
-        enemy.y < -12 ||
-        enemy.y > MAP.height + 12
-      ) {
-        continue;
-      }
-      const r = 4.75;
-      ctx.moveTo(enemy.x, enemy.y - r);
-      ctx.lineTo(enemy.x + r * 0.86, enemy.y - r * 0.5);
-      ctx.lineTo(enemy.x + r * 0.86, enemy.y + r * 0.5);
-      ctx.lineTo(enemy.x, enemy.y + r);
-      ctx.lineTo(enemy.x - r * 0.86, enemy.y + r * 0.5);
-      ctx.lineTo(enemy.x - r * 0.86, enemy.y - r * 0.5);
-      ctx.closePath();
-    }
-    ctx.fill();
-    ctx.stroke();
-
     ctx.globalAlpha = 1;
   }
 

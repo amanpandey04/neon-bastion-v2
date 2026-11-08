@@ -7,7 +7,7 @@
 
 # Neon Bastion - Hold the Line
 
-A polished browser-based tower defense game built with **React, JavaScript, Tailwind and Canvas 2D**.
+A polished browser-based tower defense game built with **React, JavaScript, CSS, and Canvas 2D**.
 
 ## Links
 
@@ -139,7 +139,7 @@ The engine uses one `requestAnimationFrame()` loop.
 
 Simulation uses a fixed timestep of `1 / 60` second. Real elapsed time is accumulated and consumed in fixed simulation steps, which keeps gameplay behavior consistent across refresh rates.
 
-React receives lightweight snapshots approximately every 100ms instead of receiving every entity position every rendered frame.
+React receives lightweight snapshots approximately every 100ms during gameplay. During benchmarks, snapshots are reduced to once per second so the countdown and progress remain visible without causing unnecessary UI commits.
 
 ---
 
@@ -155,7 +155,7 @@ The assignment stress workload is:
 
 The first iteration exposed a severe performance problem under this workload, reaching roughly the **10-20 FPS range** during the stress test. That made profiling and architecture a core part of the implementation rather than an afterthought.
 
-The current Performance Lab reproduces the required workload and provides short live A/B experiments so the effect of the selected optimizations can be measured in the browser without freezing the game UI.
+The Performance Lab sits below the game, leaving the right sidebar dedicated to gameplay controls. Starting a test automatically scrolls the battlefield into view before warm-up begins. Measurements pause if the canvas leaves the viewport or the browser tab is hidden, then restart the warm-up when the game is visible again.
 
 ## Main bottlenecks investigated
 
@@ -169,7 +169,7 @@ Temporary direction objects in projectile movement created avoidable short-lived
 
 ### Rendering overhead
 
-Canvas drawing was profiled as part of the total frame cost. A cached offscreen scenery layer was tested, but it was not kept as a production optimization because the live measurements did not show a consistent improvement on the target browser.
+The visible battlefield includes a Canvas scene plus small DOM status badges. A translucent `backdrop-filter` over an actively changing Canvas can force repeated backdrop recompositing. That visual effect is disabled only while benchmarking. During the stress run, the static parts of the 100 tower sprites (platforms, rings, cores, and level badges) are pre-rendered once to an offscreen layer; only their directional barrels are redrawn as targets move. The background grid is drawn as one combined Canvas path rather than dozens of separate strokes. Stress-mode enemy and projectile drawing is batched to reduce Canvas state changes and path work. The renderer displays a lightweight visual sample of enemies, while the complete 5,000-enemy population remains active, simulated, and available to tower targeting. This is a rendering-only simplification; it does not reduce the simulated workload. The full-scene bitmap cache remains disabled because previous live measurements did not show a consistent benefit.
 
 ### Entity churn
 
@@ -185,7 +185,7 @@ Thousands of moving entities should not be synchronized through React state ever
 
 ## 1. Spatial grid for target lookup
 
-The map is partitioned into fixed-size cells. Enemies are inserted into the grid each simulation update. A tower queries only nearby cells instead of scanning all 5,000 enemies.
+The map is partitioned into fixed-size cells. Enemies are inserted into the grid each simulation update. A tower queries only nearby cells instead of scanning all 5,000 enemies. Towers also validate their current target against the tower's attack radius every simulation step. A dead or out-of-range target is cleared immediately, so the barrel and targeting beam do not keep tracking an enemy the tower cannot attack.
 
 The Performance Lab measures this optimization **OFF and ON against the same 5,000 / 100 / 1,000 workload**.
 
@@ -203,7 +203,15 @@ Enemies and towers are stored in `Map` objects keyed by ID. Projectiles can reso
 
 Dynamic entities outside the visible canvas region are skipped during rendering.
 
-## 5. Cached tower statistics
+## 5. Static stress-tower layer
+
+The stress layout contains 100 stationary towers. Their platforms, rings, cores, and level badges are rendered once to a reusable offscreen layer. Only the moving barrels are drawn each frame. This removes repeated text and static-shape drawing from the visible stress render path.
+
+## 6. Batched background grid
+
+The map grid is assembled into one Canvas path and stroked once per frame rather than issuing a separate path/stroke for every grid line.
+
+## 7. Cached tower statistics
 
 Derived tower statistics are cached and invalidated only when a tower is upgraded, avoiding repeated object creation during targeting and rendering.
 
@@ -214,11 +222,13 @@ The in-game Performance Lab separates two measurements:
 - **Frame interval:** time between browser `requestAnimationFrame` callbacks. This is the value used for the assignment's FPS criteria.
 - **CPU work:** JavaScript time spent updating and rendering the game during a frame.
 
+The 20-second benchmark clock uses the actual elapsed time between animation-frame callbacks. The simulation itself still caps the per-step elapsed delta to avoid large catch-up updates after a stall. Path-segment unit vectors are precomputed, so enemy movement avoids repeating a square-root and vector normalization for every enemy on every fixed update. During benchmarking, the normal rolling-FPS ring buffer is skipped because the benchmark maintains its own frame counters. Spatial-grid insertion uses direct cell-index arithmetic for the 5,000 enemy updates.
+
 The final stress benchmark uses:
 
 ```text
 3-second warm-up
-30-second measurement
+20-second measurement
 ```
 
 and checks:
@@ -236,24 +246,24 @@ The stress harness keeps the required entity counts stable while measuring:
 1,000 projectiles
 ```
 
-See [`NUMBERS.md`](./NUMBERS.md) for the live A/B experiment results and final benchmark numbers captured for the submission.
+The optional before/after checks compare the spatial-grid and object-pool operations used by the game. They run only when started and never add work to normal gameplay. Each check temporarily loads the stress dataset, measures the operation before and after, then returns the game to a fresh state. These isolated CPU microbenchmarks do not scroll the page or run the Canvas renderer, and their lock is released after each run so either comparison can be repeated or followed by the other. They are separate from the viewport-aware final stress benchmark. See [`NUMBERS.md`](./NUMBERS.md) for the recorded optimization and stress-test measurements.
 
 ---
 
 # Performance Lab
 
-The in-game Performance Lab provides:
+The in-game Performance Lab is placed below the game so the right sidebar stays focused on gameplay controls. It provides:
 
-- Initial-style baseline benchmark
-- Spatial-grid A/B test
-- Object-pool A/B test
-- Final 30-second benchmark
+- A final 20-second stress benchmark
+- Optional spatial-grid and object-pool before/after checks for optimization evidence
 - Live frame interval and CPU timings
 - Exact stress-workload counters
 
-Each A/B experiment loads the same stress dataset, measures the selected operation with the optimization disabled, then repeats it with the optimization enabled.
+Starting any benchmark automatically scrolls the canvas into view. A countdown is displayed over the battlefield during warm-up and measurement. Measurements are accepted only while at least 72% of the canvas is visible and the browser tab is active. Visibility is tracked with `IntersectionObserver` rather than a layout read on every animation frame. If the canvas is scrolled away or the tab is hidden, the benchmark pauses and restarts its warm-up when visibility is restored. When a run completes, the page automatically scrolls back down to the result panel.
 
-This makes the performance improvements measurable rather than relying only on a single final number.
+Each optional before/after experiment loads the same stress dataset, measures the selected operation with the optimization disabled, then repeats it with the optimization enabled. These checks are deliberately separate from the final stress benchmark because they temporarily use the engine to perform isolated measurements.
+
+This makes the performance changes measurable rather than relying only on a single final number.
 
 ---
 

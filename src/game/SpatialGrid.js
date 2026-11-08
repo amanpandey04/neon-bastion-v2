@@ -4,6 +4,7 @@ export class SpatialGrid {
     this.height = height;
 
     this.cellSize = cellSize;
+    this.inverseCellSize = 1 / cellSize;
 
     this.cols = Math.ceil(width / cellSize);
 
@@ -32,9 +33,19 @@ export class SpatialGrid {
   }
 
   insert(enemy) {
-    const index = this.getCellIndex(enemy.x, enemy.y);
+    // Enemy positions stay within the map bounds. Truncating the positive
+    // scaled coordinates avoids Math.min/Math.max on every one of the 5,000
+    // inserts performed during each stress-mode simulation step.
+    let col = (enemy.x * this.inverseCellSize) | 0;
+    let row = (enemy.y * this.inverseCellSize) | 0;
 
-    this.cells[index].push(enemy);
+    if (col < 0) col = 0;
+    else if (col >= this.cols) col = this.cols - 1;
+
+    if (row < 0) row = 0;
+    else if (row >= this.rows) row = this.rows - 1;
+
+    this.cells[row * this.cols + col].push(enemy);
   }
 
   queryCircle(x, y, radius, result) {

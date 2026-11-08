@@ -1036,3 +1036,248 @@ button.primary {
     grid-template-columns: 1fr;
   }
 }
+
+/* ==========================================================
+   PERFORMANCE LAB BELOW THE GAME
+   ========================================================== */
+
+.performance-lab {
+  margin: 18px 20px 20px;
+  padding: 0;
+  overflow: hidden;
+  background: #0a1422;
+  border: 1px solid rgba(130, 170, 220, 0.14);
+  border-radius: 16px;
+}
+
+.performance-lab > summary {
+  padding: 15px 18px;
+  color: #d9e8f8;
+  font-size: 13px;
+  letter-spacing: 0.12em;
+}
+
+.performance-lab .summary-note {
+  color: #88a0bb;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+
+.performance-content {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: 16px 22px;
+  margin: 0;
+  padding: 0 18px 18px;
+  align-items: start;
+}
+
+.performance-overview,
+.performance-controls {
+  min-width: 0;
+}
+
+.performance-overview .stress-workload {
+  margin-bottom: 14px;
+}
+
+.stress-render-note {
+  margin: 0 0 12px;
+  color: #8298b2;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.performance-overview .debug-timings {
+  font-size: 12px;
+}
+
+.performance-controls .lab-actions {
+  grid-template-columns: minmax(0, 1fr);
+  align-items: stretch;
+  gap: 10px;
+  margin-top: 0;
+}
+
+.performance-controls .lab-actions button {
+  min-height: 52px;
+  height: 52px;
+  max-height: 52px;
+  padding: 8px 12px;
+  font-size: 13px;
+}
+
+.experiment-actions {
+  margin-top: 14px;
+  padding: 0;
+  border: 1px solid rgba(130, 170, 220, 0.1);
+  border-radius: 10px;
+  background: rgba(4, 11, 20, 0.28);
+}
+
+.experiment-actions > summary {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 11px 12px;
+  color: #a9bdd4;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.experiment-actions > summary::-webkit-details-marker {
+  display: none;
+}
+
+.experiment-actions > summary::after {
+  content: "+";
+  color: #6b85a2;
+  font-size: 15px;
+}
+
+.experiment-actions[open] > summary::after {
+  content: "−";
+}
+
+.experiment-actions .experiment-copy {
+  padding: 0 12px;
+  color: #859bb4;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.experiment-actions .experiment-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding: 0 12px 12px;
+}
+
+.experiment-actions .experiment-grid button {
+  min-height: 40px;
+  font-size: 12px;
+  text-align: center;
+}
+
+.performance-note {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: #8298b2;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.performance-note + .performance-note {
+  margin-top: -8px;
+}
+
+.performance-controls .benchmark-box {
+  margin-top: 12px;
+}
+
+@media (max-width: 900px) {
+  .performance-content {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 620px) {
+  .performance-lab {
+    margin: 12px 10px 12px;
+  }
+
+  .performance-lab > summary {
+    align-items: flex-start;
+    font-size: 12px;
+  }
+
+  .performance-lab .summary-note {
+    max-width: 44%;
+    text-align: right;
+    line-height: 1.35;
+  }
+
+  .performance-content {
+    padding: 0 12px 14px;
+    gap: 12px;
+  }
+
+  .performance-controls .lab-actions,
+  .experiment-actions .experiment-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .performance-controls .lab-actions button {
+    width: 100%;
+  }
+}
+
+/* Visible benchmark countdown over the battlefield */
+.benchmark-countdown {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-width: 94px;
+  padding: 9px 13px;
+  border: 1px solid rgba(101, 215, 255, 0.28);
+  border-radius: 12px;
+  background: rgba(2, 9, 17, 0.88);
+  box-shadow: none;
+  pointer-events: none;
+  /* Avoid backdrop-filter over an animated canvas during the benchmark. */
+}
+
+.benchmark-countdown span {
+  color: #8ba4bf;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+}
+
+.benchmark-countdown strong {
+  color: #dff8ff;
+  font-size: 22px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.benchmark-countdown.is-measuring {
+  border-color: rgba(114, 240, 164, 0.42);
+}
+
+.benchmark-countdown.is-measuring strong {
+  color: #72f0a4;
+}
+
+@media (max-width: 620px) {
+  .benchmark-countdown {
+    top: 10px;
+    right: 10px;
+    min-width: 76px;
+    padding: 7px 9px;
+  }
+
+  .benchmark-countdown strong {
+    font-size: 18px;
+  }
+}
+
+/* Avoid expensive backdrop filtering over the animated canvas during tests.
+   The badges stay readable with an opaque background. */
+.canvas-wrap.is-benchmarking .canvas-badges span {
+  background: rgba(2, 9, 17, 0.96);
+  backdrop-filter: none;
+}
+
+.canvas-wrap.is-benchmarking::after {
+  box-shadow: none;
+}

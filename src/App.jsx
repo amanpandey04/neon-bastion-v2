@@ -22,6 +22,7 @@ function Stat({ label, value }) {
 function App() {
   const canvasRef = useRef(null);
   const engineRef = useRef(null);
+  const benchmarkResultRef = useRef(null);
   const [snapshot, setSnapshot] = useState(null);
 
   useEffect(() => {
@@ -34,6 +35,21 @@ function App() {
       engine.destroy();
     };
   }, []);
+
+  useEffect(() => {
+    if (!snapshot?.benchmark?.complete || snapshot.benchmark.kind === "experiment") {
+      return undefined;
+    }
+
+    const frame = window.requestAnimationFrame(() => {
+      benchmarkResultRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [snapshot?.benchmark?.complete, snapshot?.benchmark?.kind]);
 
   const engine = engineRef.current;
   const selected = snapshot?.selectedTower;
@@ -48,6 +64,20 @@ function App() {
     if (snapshot.runningWave) return `Wave ${snapshot.wave}`;
     return snapshot.wave === 0 ? "Ready" : `Wave ${snapshot.wave} complete`;
   }, [snapshot]);
+
+  const benchmark = snapshot?.benchmark;
+  const benchmarkDuration = 20;
+  const benchmarkWarmup = 3;
+  const countdownLabel =
+    !benchmark || !benchmark.active
+      ? ""
+      : benchmark.phase === "positioning"
+        ? "PREPARING"
+        : benchmark.visibilityPaused
+          ? "PAUSED"
+          : benchmark.phase === "warmup"
+            ? `WARM-UP ${Math.max(0, Math.ceil(benchmarkWarmup - benchmark.warmupElapsed))}s`
+            : `${Math.max(0, Math.ceil(benchmarkDuration - benchmark.measuredElapsed))}s`;
 
   return (
     <main className="app-shell">
@@ -69,7 +99,7 @@ function App() {
         </header>
 
         <div className="game-layout">
-          <div className="canvas-wrap">
+          <div className={`canvas-wrap ${benchmark?.active ? "is-benchmarking" : ""}`}>
             <canvas
               ref={canvasRef}
               width={960}
@@ -84,6 +114,15 @@ function App() {
               {snapshot?.stressMode && <span>{snapshot?.projectileCount ?? 0} projectiles</span>}
               {buildData && <span className="build-badge">Placing {buildData.name}</span>}
             </div>
+
+            {benchmark?.active && benchmark.kind !== "experiment" && (
+              <div
+                className={`benchmark-countdown ${benchmark.phase === "measuring" ? "is-measuring" : ""}`}
+              >
+                <span>{benchmark.phase === "measuring" ? "TIME LEFT" : "STRESS TEST"}</span>
+                <strong>{countdownLabel}</strong>
+              </div>
+            )}
 
             {(snapshot?.paused || snapshot?.victory || snapshot?.gameOver) && (
               <div className="overlay">
@@ -256,227 +295,247 @@ function App() {
                 <span>Pause or resume the battle.</span>
               </div>
             </section>
-
-            <details className="dev-tools panel" open>
-              <summary>
-                <span>Performance Lab</span>
-                <span className="summary-note">live A/B tests</span>
-              </summary>
-
-              <div className="dev-content">
-                <div className="stress-workload">
-                  <div className="workload-title">Stress workload</div>
-                  <div className="workload-grid">
-                    <strong>
-                      5,000 <span>enemies</span>
-                    </strong>
-                    <strong>
-                      100 <span>towers</span>
-                    </strong>
-                    <strong>
-                      1,000 <span>projectiles</span>
-                    </strong>
-                  </div>
-                </div>
-
-                <div className="perf-grid">
-                  <Stat label="Display FPS" value={Math.round(snapshot?.fps ?? 60)} />
-                  <Stat
-                    label="Frame interval"
-                    value={`${(snapshot?.frameMs ?? 16.7).toFixed(1)}ms`}
-                  />
-                  <Stat
-                    label="CPU work"
-                    value={`${(snapshot?.performance?.cpuFrameMs ?? 0).toFixed(2)}ms`}
-                  />
-                  <Stat
-                    label="Update / render"
-                    value={`${(snapshot?.performance?.updateMs ?? 0).toFixed(2)} / ${(snapshot?.performance?.renderMs ?? 0).toFixed(2)}ms`}
-                  />
-                </div>
-
-                <div className="debug-timings">
-                  <div>Enemies: {(snapshot?.performance?.enemiesMs ?? 0).toFixed(2)}ms</div>
-                  <div>Towers: {(snapshot?.performance?.towersMs ?? 0).toFixed(2)}ms</div>
-                  <div>Projectiles: {(snapshot?.performance?.projectilesMs ?? 0).toFixed(2)}ms</div>
-                  <div>
-                    Pool sizes: {snapshot?.objectPoolSize ?? 0} /{" "}
-                    {snapshot?.projectilePoolSize ?? 0}
-                  </div>
-                </div>
-
-                <div className="lab-actions">
-                  <button
-                    className="stress"
-                    onClick={() => engine.runStressBaseline()}
-                    disabled={snapshot?.benchmark?.active}
-                  >
-                    Run Baseline
-                  </button>
-
-                  <button
-                    className="primary"
-                    onClick={() => engine.runStressTest()}
-                    disabled={snapshot?.benchmark?.active}
-                  >
-                    Run Final 30s Benchmark
-                  </button>
-                </div>
-
-                <div className="experiment-actions">
-                  <div className="experiment-title">Live optimization experiments</div>
-                  <p className="hint experiment-copy">
-                    Each A/B run uses the exact stress workload and measures one targeted operation
-                    with the optimization disabled, then enabled.
-                  </p>
-
-                  <div className="experiment-grid">
-                    <button
-                      onClick={() => engine.runPerformanceExperiment("spatialGrid")}
-                      disabled={snapshot?.benchmark?.active}
-                    >
-                      A/B Spatial Grid
-                    </button>
-                    <button
-                      onClick={() => engine.runPerformanceExperiment("objectPool")}
-                      disabled={snapshot?.benchmark?.active}
-                    >
-                      A/B Object Pool
-                    </button>
-                  </div>
-                </div>
-
-                {snapshot?.benchmark?.active && (
-                  <div className="benchmark-box">
-                    <div className="benchmark-status">
-                      {snapshot.benchmark.kind === "experiment"
-                        ? `${snapshot.benchmark.experimentStage === "before" ? "BEFORE" : "AFTER"} • ${experimentLabels[snapshot.benchmark.experimentId]}`
-                        : snapshot.benchmark.kind === "baseline"
-                          ? snapshot.benchmark.phase === "warmup"
-                            ? "INITIAL-STYLE BASELINE • WARMING UP"
-                            : "INITIAL-STYLE BASELINE • MEASURING"
-                          : snapshot.benchmark.phase === "warmup"
-                            ? "FINAL BENCHMARK • WARMING UP"
-                            : "FINAL BENCHMARK • MEASURING"}
-                    </div>
-
-                    <div className="benchmark-progress">
-                      {snapshot.benchmark.phase === "warmup"
-                        ? `${snapshot.benchmark.warmupElapsed.toFixed(1)}s warm-up`
-                        : `${snapshot.benchmark.measuredElapsed.toFixed(1)}s measured`}
-                    </div>
-
-                    {snapshot.benchmark.phase === "measuring" && (
-                      <div className="benchmark-stats">
-                        <div>
-                          <span>FPS threshold</span>
-                          <strong>{snapshot.benchmark.pass45FpsPercent.toFixed(1)}%</strong>
-                        </div>
-                        <div>
-                          <span>&gt;33ms</span>
-                          <strong>{snapshot.benchmark.over33msPercent.toFixed(1)}%</strong>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {snapshot?.benchmark?.complete && (
-                  <div className="benchmark-box">
-                    <div className="benchmark-result-title">
-                      {snapshot.benchmark.kind === "experiment"
-                        ? "A/B Experiment Complete"
-                        : snapshot.benchmark.kind === "baseline"
-                          ? "Baseline Complete"
-                          : "30s Stress Test Complete"}
-                    </div>
-
-                    {snapshot.benchmark.kind === "experiment" &&
-                    snapshot.benchmark.before &&
-                    snapshot.benchmark.after ? (
-                      <div className="ab-table">
-                        <div className="ab-header">
-                          <span></span>
-                          <strong>Before</strong>
-                          <strong>After</strong>
-                        </div>
-                        <div>
-                          <span>{snapshot.benchmark.before.metric}</span>
-                          <strong>
-                            {snapshot.benchmark.before.averageCpuFrameMs.toFixed(2)}ms
-                          </strong>
-                          <strong>{snapshot.benchmark.after.averageCpuFrameMs.toFixed(2)}ms</strong>
-                        </div>
-                        <div>
-                          <span>Total measurement</span>
-                          <strong>{snapshot.benchmark.before.totalMs.toFixed(2)}ms</strong>
-                          <strong>{snapshot.benchmark.after.totalMs.toFixed(2)}ms</strong>
-                        </div>
-                        <div>
-                          <span>Change</span>
-                          <strong>—</strong>
-                          <strong>
-                            {snapshot.benchmark.before.averageCpuFrameMs > 0
-                              ? `${((snapshot.benchmark.after.averageCpuFrameMs / snapshot.benchmark.before.averageCpuFrameMs - 1) * 100).toFixed(1)}%`
-                              : "—"}
-                          </strong>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="benchmark-stats">
-                        <div>
-                          <span>Frames</span>
-                          <strong>{snapshot.benchmark.totalFrames}</strong>
-                        </div>
-                        <div>
-                          <span>Avg interval</span>
-                          <strong>{snapshot.benchmark.averageFrameMs.toFixed(2)}ms</strong>
-                        </div>
-                        <div>
-                          <span>Worst interval</span>
-                          <strong>{snapshot.benchmark.worstFrameMs.toFixed(2)}ms</strong>
-                        </div>
-                        <div>
-                          <span>CPU work</span>
-                          <strong>{snapshot.benchmark.averageCpuFrameMs.toFixed(2)}ms</strong>
-                        </div>
-                        <div>
-                          <span>≥45 FPS</span>
-                          <strong>{snapshot.benchmark.pass45FpsPercent.toFixed(1)}%</strong>
-                        </div>
-                        <div>
-                          <span>&gt;33ms</span>
-                          <strong>{snapshot.benchmark.over33msPercent.toFixed(1)}%</strong>
-                        </div>
-                      </div>
-                    )}
-
-                    {snapshot.benchmark.kind === "final" && (
-                      <div
-                        className={
-                          snapshot.benchmark.pass45FpsPercent >= 95 &&
-                          snapshot.benchmark.over33msPercent < 5
-                            ? "benchmark-pass"
-                            : "benchmark-fail"
-                        }
-                      >
-                        {snapshot.benchmark.pass45FpsPercent >= 95 &&
-                        snapshot.benchmark.over33msPercent < 5
-                          ? "PASS"
-                          : "NEEDS WORK • TRY RUNNING AGAIN"}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                <p className="hint">
-                  A/B experiments isolate the operation being optimized. The final 30s test measures
-                  the browser&apos;s real RAF cadence for the assignment FPS thresholds.
-                </p>
-              </div>
-            </details>
           </aside>
         </div>
+
+        <details className="dev-tools panel performance-lab" open>
+          <summary>
+            <span>Performance Lab</span>
+            <span className="summary-note">stress test · viewport aware measurements</span>
+          </summary>
+
+          <div className="dev-content performance-content">
+            <div className="performance-overview">
+              <div className="stress-workload">
+                <div className="workload-title">Stress workload</div>
+                <div className="workload-grid">
+                  <strong>
+                    5,000 <span>enemies</span>
+                  </strong>
+                  <strong>
+                    100 <span>towers</span>
+                  </strong>
+                  <strong>
+                    1,000 <span>projectiles</span>
+                  </strong>
+                </div>
+              </div>
+
+              <div className="perf-grid">
+                <Stat label="Display FPS" value={Math.round(snapshot?.fps ?? 60)} />
+                <Stat
+                  label="Frame interval"
+                  value={`${(snapshot?.frameMs ?? 16.7).toFixed(1)}ms`}
+                />
+                <Stat
+                  label="CPU work"
+                  value={`${(snapshot?.performance?.cpuFrameMs ?? 0).toFixed(2)}ms`}
+                />
+                <Stat
+                  label="Update / render"
+                  value={`${(snapshot?.performance?.updateMs ?? 0).toFixed(2)} / ${(snapshot?.performance?.renderMs ?? 0).toFixed(2)}ms`}
+                />
+              </div>
+
+              <div className="debug-timings">
+                <div>Enemies: {(snapshot?.performance?.enemiesMs ?? 0).toFixed(2)}ms</div>
+                <div>Towers: {(snapshot?.performance?.towersMs ?? 0).toFixed(2)}ms</div>
+                <div>Projectiles: {(snapshot?.performance?.projectilesMs ?? 0).toFixed(2)}ms</div>
+                <div>
+                  Pool sizes: {snapshot?.objectPoolSize ?? 0} / {snapshot?.projectilePoolSize ?? 0}
+                </div>
+              </div>
+            </div>
+
+            <div className="performance-controls">
+              <div className="lab-actions">
+                <button
+                  className="primary"
+                  onClick={() => engine.runStressTest()}
+                  disabled={snapshot?.benchmark?.active}
+                >
+                  Run 20s Final Stress Test
+                </button>
+              </div>
+
+              <details className="experiment-actions">
+                <summary>Optimization evidence (optional)</summary>
+                <p className="hint experiment-copy">
+                  These optional checks compare spatial-grid and object-pool operations on the same
+                  5,000-enemy workload. They run locally without moving the page, show each stage
+                  briefly, and restore a fresh game state when complete.
+                </p>
+
+                <div className="experiment-grid">
+                  <button
+                    onClick={() => engine.runPerformanceExperiment("spatialGrid")}
+                    disabled={snapshot?.benchmark?.active}
+                  >
+                    Spatial Grid · Before / After
+                  </button>
+                  <button
+                    onClick={() => engine.runPerformanceExperiment("objectPool")}
+                    disabled={snapshot?.benchmark?.active}
+                  >
+                    Object Pool · Before / After
+                  </button>
+                </div>
+              </details>
+
+              {snapshot?.benchmark?.setupError && (
+                <div className="benchmark-fail">{snapshot.benchmark.setupError}</div>
+              )}
+
+              {snapshot?.benchmark?.active && (
+                <div className="benchmark-box">
+                  <div className="benchmark-status">
+                    {snapshot.benchmark.phase === "positioning"
+                      ? "BRINGING BATTLEFIELD INTO VIEW"
+                      : snapshot.benchmark.visibilityPaused
+                        ? "PAUSED · KEEP BATTLEFIELD VISIBLE"
+                        : snapshot.benchmark.kind === "experiment"
+                          ? snapshot.benchmark.experimentStage === "preparing"
+                            ? `PREPARING · ${experimentLabels[snapshot.benchmark.experimentId]}`
+                            : `${snapshot.benchmark.experimentStage === "before" ? "BEFORE PASS" : "AFTER PASS"} · ${experimentLabels[snapshot.benchmark.experimentId]}`
+                          : snapshot.benchmark.phase === "warmup"
+                            ? "FINAL STRESS TEST · WARMING UP"
+                            : "FINAL STRESS TEST · MEASURING"}
+                  </div>
+
+                  <div className="benchmark-progress">
+                    {snapshot.benchmark.phase === "positioning"
+                      ? "Scrolling to the battlefield and waiting for the view to settle"
+                      : snapshot.benchmark.visibilityPaused
+                        ? "Measurement paused. Return to the game; warm-up will restart."
+                        : snapshot.benchmark.kind === "experiment"
+                          ? snapshot.benchmark.experimentStage === "before"
+                            ? "Measuring the unoptimized operation (timing only; no page scroll)."
+                            : snapshot.benchmark.experimentStage === "after"
+                              ? "Measuring the optimized operation on a fresh, equivalent workload."
+                              : "Preparing the optimization evidence workload."
+                          : snapshot.benchmark.phase === "warmup"
+                            ? `${snapshot.benchmark.warmupElapsed.toFixed(1)}s warm-up`
+                            : `${snapshot.benchmark.measuredElapsed.toFixed(1)}s measured`}
+                  </div>
+
+                  {snapshot.benchmark.kind === "experiment" && snapshot.benchmark.before ? (
+                    <div className="benchmark-progress experiment-live-result">
+                      Before measurement: {snapshot.benchmark.before.averageCpuFrameMs.toFixed(2)}ms
+                      per {snapshot.benchmark.before.metric.toLowerCase()} round
+                    </div>
+                  ) : snapshot.benchmark.phase === "measuring" &&
+                    snapshot.benchmark.kind !== "experiment" ? (
+                    <div className="benchmark-stats">
+                      <div>
+                        <span>≥45 FPS</span>
+                        <strong>{snapshot.benchmark.pass45FpsPercent.toFixed(1)}%</strong>
+                      </div>
+                      <div>
+                        <span>&gt;33ms</span>
+                        <strong>{snapshot.benchmark.over33msPercent.toFixed(1)}%</strong>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              )}
+
+              {snapshot?.benchmark?.complete && (
+                <div ref={benchmarkResultRef} className="benchmark-box">
+                  <div className="benchmark-result-title">
+                    {snapshot.benchmark.kind === "experiment"
+                      ? "Optimization Evidence Complete"
+                      : "20s Stress Test Complete"}
+                  </div>
+
+                  {snapshot.benchmark.kind === "experiment" &&
+                  snapshot.benchmark.before &&
+                  snapshot.benchmark.after ? (
+                    <div className="ab-table">
+                      <div className="ab-header">
+                        <span></span>
+                        <strong>Before</strong>
+                        <strong>After</strong>
+                      </div>
+                      <div>
+                        <span>{snapshot.benchmark.before.metric}</span>
+                        <strong>{snapshot.benchmark.before.averageCpuFrameMs.toFixed(2)}ms</strong>
+                        <strong>{snapshot.benchmark.after.averageCpuFrameMs.toFixed(2)}ms</strong>
+                      </div>
+                      <div>
+                        <span>Total measurement</span>
+                        <strong>{snapshot.benchmark.before.totalMs.toFixed(2)}ms</strong>
+                        <strong>{snapshot.benchmark.after.totalMs.toFixed(2)}ms</strong>
+                      </div>
+                      <div>
+                        <span>Change</span>
+                        <strong>—</strong>
+                        <strong>
+                          {snapshot.benchmark.before.averageCpuFrameMs > 0
+                            ? `${((snapshot.benchmark.after.averageCpuFrameMs / snapshot.benchmark.before.averageCpuFrameMs - 1) * 100).toFixed(1)}%`
+                            : "—"}
+                        </strong>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="benchmark-stats">
+                      <div>
+                        <span>Frames</span>
+                        <strong>{snapshot.benchmark.totalFrames}</strong>
+                      </div>
+                      <div>
+                        <span>Avg interval</span>
+                        <strong>{snapshot.benchmark.averageFrameMs.toFixed(2)}ms</strong>
+                      </div>
+                      <div>
+                        <span>Worst interval</span>
+                        <strong>{snapshot.benchmark.worstFrameMs.toFixed(2)}ms</strong>
+                      </div>
+                      <div>
+                        <span>CPU work</span>
+                        <strong>{snapshot.benchmark.averageCpuFrameMs.toFixed(2)}ms</strong>
+                      </div>
+                      <div>
+                        <span>≥45 FPS</span>
+                        <strong>{snapshot.benchmark.pass45FpsPercent.toFixed(1)}%</strong>
+                      </div>
+                      <div>
+                        <span>&gt;33ms</span>
+                        <strong>{snapshot.benchmark.over33msPercent.toFixed(1)}%</strong>
+                      </div>
+                    </div>
+                  )}
+
+                  {snapshot.benchmark.kind === "final" && (
+                    <div
+                      className={
+                        snapshot.benchmark.pass45FpsPercent >= 95 &&
+                        snapshot.benchmark.over33msPercent < 5
+                          ? "benchmark-pass"
+                          : "benchmark-fail"
+                      }
+                    >
+                      {snapshot.benchmark.pass45FpsPercent >= 95 &&
+                      snapshot.benchmark.over33msPercent < 5
+                        ? "PASS"
+                        : "NEEDS WORK"}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <p className="hint performance-note">
+              Starting a test automatically brings the battlefield into view. Keep the canvas
+              visible and this browser tab active while it runs. If you scroll away or switch tabs,
+              measurement pauses and the warm-up restarts when you return.
+            </p>
+
+            <p className="hint performance-note">
+              The final test measures actual browser frame intervals for 20 seconds after a 3-second
+              warm-up. CPU work is reported separately.
+            </p>
+          </div>
+        </details>
       </section>
     </main>
   );

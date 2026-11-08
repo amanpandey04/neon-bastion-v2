@@ -75,6 +75,9 @@ export class Tower {
     this.totalSpent = 0;
 
     this.targetId = 0;
+    this.targetRef = null;
+    this.aimUnitX = 1;
+    this.aimUnitY = 0;
     this.statsCache = null;
   }
 
@@ -93,6 +96,9 @@ export class Tower {
     this.totalSpent = TOWER_TYPES[type].cost;
 
     this.targetId = 0;
+    this.targetRef = null;
+    this.aimUnitX = 1;
+    this.aimUnitY = 0;
     this.statsCache = null;
   }
 }
@@ -112,7 +118,9 @@ export class Projectile {
     this.radius = 3;
 
     this.targetId = 0;
+    this.targetRef = null;
     this.towerId = 0;
+    this.ownerRef = null;
 
     this.splashRadius = 0;
 
@@ -123,6 +131,8 @@ export class Projectile {
   reset() {
     this.active = false;
     this.targetId = 0;
+    this.targetRef = null;
+    this.ownerRef = null;
     this.lifetime = 0;
   }
 }
